@@ -78,8 +78,6 @@ Server -> client events:
 app = Flask(__name__)
 socketio = SocketIO(app)
 
-
-
 @socketio.on('join_room')
 def handle_join_room(data): #data is just payload of event. in this case, it looks like this: { room_code: 'some_code' }
     room_code = data.get('room_code')
@@ -124,3 +122,24 @@ def handle_send_message(data):
         db.session.commit()
     else:
         emit("error", {"message": "Room not found"})
+
+@socketio.on('leave_room')
+def handle_leave_room(data): #data looks like {room_code:...}
+   '''
+   steps:
+   get the current socket id
+   get the room_code from the data
+
+   look up the room by code
+   if the room exisits loop through and then delete
+
+   '''
+   room_code = data.get('room_code')
+
+   room = Room.query.filter_by(room_code=room_code).first()
+   if room:
+       leave_room(room.room_id)
+       #broadcast that user has left
+       #get the user_id from data for now do oauth later
+       emit("user_left", {"user_id": data.get('user_id')}, room=room.room_id)
+
