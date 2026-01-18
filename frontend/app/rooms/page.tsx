@@ -3,6 +3,7 @@
 import { useSession, signOut } from 'next-auth/react';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import axios from 'axios';
 
 export default function RoomsPage() {
   const { data: session, status } = useSession();
@@ -10,7 +11,9 @@ export default function RoomsPage() {
   const [roomCode, setRoomCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [createdRoomCode, setCreatedRoomCode] = useState<string | null>(null);
 
+  
   if (status === 'loading') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-600 to-blue-800 flex items-center justify-center">
@@ -44,21 +47,20 @@ export default function RoomsPage() {
     setError('');
 
     try {
-      const response = await fetch('http://localhost:5000/api/rooms/create', {
-        method: 'POST',
-      });
+        const response = await axios.post('http://localhost:5000/create_room');
+        const newRoomCode = response.data.room_code;
 
-      if (!response.ok) throw new Error('Failed to create room');
+        setCreatedRoomCode(newRoomCode);
+        setLoading(false);
 
-      const data = await response.json();
-      const newRoomCode = data.room_code;
-
-      router.push(`/chat?room=${newRoomCode}`);
     } catch (err) {
-      setError('Failed to create room. Make sure backend is running.');
-      setLoading(false);
+        setError('Failed to create room. Make sure backend is running.');
+        setLoading(false);
+
     }
-  };
+};
+
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-600 to-blue-800">
@@ -100,8 +102,9 @@ export default function RoomsPage() {
                 type="text"
                 value={roomCode}
                 onChange={(e) => setRoomCode(e.target.value)}
-                placeholder="Enter room code (e.g., ABC123)"
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500"
+                placeholder="Enter room code"
+                className="flex-1 px-3 py-2 border rounded font-mono text-center
+             text-gray-900 font-bold tracking-widest"
                 disabled={loading}
               />
               <button
@@ -135,6 +138,52 @@ export default function RoomsPage() {
           </p>
         </div>
       </div>
+          {createdRoomCode && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                <div className="bg-white rounded-lg p-6 w-full max-w-sm shadow-xl text-center">
+                <h3 className="text-xl font-bold text-black-800 mb-4">
+                    Room Created
+                </h3>
+
+                <p className="text-gray-600 mb-2">Share this room code:</p>
+
+                <div className="flex items-center gap-2 mb-4">
+                    <input
+                    value={createdRoomCode}
+                    readOnly
+                    className="flex-1 px-3 py-2 border rounded font-mono text-center
+                                text-gray-900 font-bold tracking-widest"
+                    />
+
+                    <button
+                    onClick={() => {
+                        navigator.clipboard.writeText(createdRoomCode);
+                    }}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded"
+                    >
+                    Copy
+                    </button>
+                </div>
+
+                <div className="flex gap-3">
+                    <button
+                    onClick={() => router.push(`/chat?room=${createdRoomCode}`)}
+                    className="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 rounded"
+                    >
+                    Join Room
+                    </button>
+
+                    <button
+                    onClick={() => setCreatedRoomCode(null)}
+                    className="flex-1 bg-gray-300 hover:bg-gray-400 py-2 rounded"
+                    >
+                    Close
+                    </button>
+                </div>
+                </div>
+            </div>
+            )}
+
     </div>
   );
 }

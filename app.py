@@ -1,7 +1,7 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import os
-from sockets import register_socket_events
+from socket_events import register_socket_events
 from flask_socketio import SocketIO
 import secrets
 import string
@@ -24,19 +24,19 @@ def generate_room_code():
 
 @app.route('/create_room', methods = ['POST'])
 def create_room():
-    data = request.get_json()
     room_code = generate_room_code()
 
     #make sure room_code is unique and there are no collisions
+    '''
     while True:
         if not Room.query.filter_by(room_code=room_code).first():
             break
 
-    room = Room(name = data["room_name"], room_code = room_code)
+    room = Room(room_code = room_code)
 
     db.session.add(room)
     db.session.commit()
-
+    '''
     return jsonify({"room_code": room_code}), 200
 
     '''
@@ -46,4 +46,15 @@ def create_room():
 
     if the user clicks on create room. THen the frontend sends a 
     post request to /create_room endpoint 
+
+
+    next steps: we bascially just need 
     '''
+
+
+
+
+if __name__ == '__main__':
+    app.run(debug=True)
+    socketio.run(app, debug=True)
+
