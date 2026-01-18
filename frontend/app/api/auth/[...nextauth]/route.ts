@@ -38,20 +38,21 @@ const handler = NextAuth({
   },
   callbacks: {
     async jwt({ token, account, profile }) {
-        if (account && profile) {
-            token.provider = account.provider; // "google"
-            token.providerId = account.providerAccountId; // stable Google ID
-            token.email = profile.email;
-        }
-        return token;
-        },
+      if (account && profile) {
+        token.provider = account.provider;
+        token.providerId = account.providerAccountId;
+        token.email = profile.email;
+      }
+      return token;
+    },
     async session({ session, token }) {
+      if (session.user) {
         session.user.provider = token.provider as string;
         session.user.providerId = token.providerId as string;
         session.user.email = token.email as string;
-        return session;
-}
-
+      }
+      return session;
+    },
   },
 });
 
