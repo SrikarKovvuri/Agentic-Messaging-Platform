@@ -28,6 +28,7 @@ def create_room():
 
     #make sure room_code is unique and there are no collisions
     '''
+    comment out all this for now to speed up without needing db integration
     while True:
         if not Room.query.filter_by(room_code=room_code).first():
             break
@@ -39,17 +40,23 @@ def create_room():
     '''
     return jsonify({"room_code": room_code}), 200
 
+
+@app.route('/room_code_check', methods = ['POST'])
+def room_code_check():
+    data = request.get_json()
+    room_code = data.get('room_code')
+
     '''
-    Flow: 
+    # Check if room exists in the database
+    room = Room.query.filter_by(room_code=room_code).first()
 
-    user can either click on join room or create room
-
-    if the user clicks on create room. THen the frontend sends a 
-    post request to /create_room endpoint 
-
-
-    next steps: we bascially just need 
+    if room:
+        return jsonify({"exists": True}), 200
+    else:
+        return jsonify({"exists": False}), 200
     '''
+    # Temporarily always return True for testing without db integration
+    return jsonify({"ok": True}), 200
 
 
 

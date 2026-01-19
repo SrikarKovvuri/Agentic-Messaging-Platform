@@ -33,7 +33,6 @@ class UserRoom(db.Model):
     )
 
     joined_at = db.Column(db.DateTime, default=datetime.utcnow)
-    role = db.Column(db.String(20), default="member")  # future-proof
 
     user = db.relationship("User", back_populates="room_links")
     room = db.relationship("Room", back_populates="user_links")
