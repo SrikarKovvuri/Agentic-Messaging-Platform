@@ -6,8 +6,10 @@ from socket_events import register_socket_events
 from flask_socketio import SocketIO
 import secrets
 import string
-from models import db, Room, UserRoom
+from models import db, Room, UserRoom, User
 from flask_sqlalchemy import SQLAlchemy
+from datetime import datetime, timedelta
+import jwt
 app = Flask(__name__)
 CORS(app)
 
@@ -29,7 +31,7 @@ register_socket_events(socketio)
 with app.app_context():
     db.create_all()
 
-
+#helper functions for the rest of the app
 def generate_room_code():
     alphabet = string.ascii_uppercase + string.digits
     
@@ -38,6 +40,14 @@ def generate_room_code():
         code += ''.join(secrets.choice(alphabet))
 
     return code
+
+def geneerate_jwt_token(user_id):
+    payload = {
+        'user_id': user_id,
+        'exp': datetime.utcnow() + timedelta(hours=1)  # Token expires in 1 hour
+    }
+    token = jwt.encode(payload, app.config['SECRET_KEY'], algorithm='HS256')
+    return token
 
 @app.route('/create_room', methods = ['POST'])
 def create_room():
@@ -68,7 +78,40 @@ def room_code_check():
     else:
         return jsonify({"exists": False}), 200
 
+@app.route('/auth/login', methods = ['POST'])
+def login():
+    data = request.get_json()
+    
+    provider = data.get('provider')
+    provider_id = data.get('provider_id')
+    email = data.get('email')
 
+    if not provider or not provider_id or not email:
+        return jsonify({"error": "Missing required fields"}), 400
+    
+    user = User.query.filter_by(oauth_provider=provider, oauth_id=provider_id).first()
+    '''
+    get the user_id. Then we want to check 
+    if user even exists in our db. if not create a new user
+
+    Then generate a jwt token and send it back to the user
+    '''
+
+    user = User.query.filter_by(oauth_provider=provider, oauth_id=provider_id).first()
+
+    if not user:
+        user = User(
+            username = email.split('@')[0],
+            email = email,
+            oauth_provider = provider,
+            oauth_id = provider_id
+            
+        )
+        db.session.add(user)
+        db.session.commit()
+
+    token = geneerate_jwt_token(user.user_id)
+    return jsonify({"token": token}), 200
 
 
 if __name__ == '__main__':
