@@ -10,6 +10,7 @@ from models import db, Room, UserRoom, User
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
 import jwt
+from flask_migrate import Migrate
 app = Flask(__name__)
 CORS(app)
 
@@ -18,7 +19,7 @@ load_dotenv()
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv("DATABASE_URL")
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
 db.init_app(app)
-
+migrate = Migrate(app, db)
 socketio = SocketIO(
     app,
     cors_allowed_origins="*",
@@ -27,9 +28,6 @@ socketio = SocketIO(
 
 
 register_socket_events(socketio)
-
-with app.app_context():
-    db.create_all()
 
 #helper functions for the rest of the app
 def generate_room_code():

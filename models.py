@@ -77,7 +77,7 @@ class Room(db.Model):
 
     room_id = db.Column(db.Integer, primary_key=True)
 
-    name = db.Column(db.String(80), nullable=False)
+    name = db.Column(db.String(80), nullable=True)
     room_code = db.Column(db.String(20), unique=True, nullable=False)
 
     # messages in this room
@@ -94,7 +94,7 @@ class Room(db.Model):
         cascade="all, delete-orphan"
     )
 
-    # convenience: room.users → list[User]
+    # convenience: room.users -> list[User]
     users = db.relationship(
         "User",
         secondary="user_rooms",
