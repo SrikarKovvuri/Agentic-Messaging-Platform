@@ -86,6 +86,7 @@ def register_socket_events(socketio: SocketIO):
             #get user_id from oauth, just do this for now
             user_id = data.get('user_id')  
             socket_id = request.sid
+            
             room = Room.query.filter_by(room_code=room_code).first()
             if room:
                 join_room(room.room_id)

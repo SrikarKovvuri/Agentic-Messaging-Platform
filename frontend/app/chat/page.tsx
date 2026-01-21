@@ -25,14 +25,14 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<any[]>([]);
   const [input, setInput] = useState('');
 
-  // 1️⃣ auth guard
+  //  auth guard
   useEffect(() => {
     if (status === 'unauthenticated') {
       router.push('/');
     }
   }, [status, router]);
 
-  // 2️⃣ connect socket
+  // connect socket
   useEffect(() => {
     if (!roomCode || !session) return;
 
@@ -56,7 +56,7 @@ export default function ChatPage() {
     };
   }, [roomCode, session]);
 
-  // 3️⃣ send message
+  // send message
   const sendMessage = () => {
     if (!socket || !input.trim()) return;
 

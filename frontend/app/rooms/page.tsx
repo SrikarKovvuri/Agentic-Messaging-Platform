@@ -37,6 +37,22 @@ export default function RoomsPage() {
     setLoading(true);
     setError('');
 
+    try {
+        const response = await axios.post('http://localhost:5000/room_code_check', {
+            room_code: roomCode.trim().toUpperCase()
+        });
+        if (!response.data.exists) {
+            setError('Room does not exist.');
+            setLoading(false);
+            return;
+        }
+    }
+
+    catch(err) {
+        setError('Failed to join room. Make sure backend is running.');
+        setLoading(false);
+        return;
+    }
     // TODO: Verify room exists before joining
     router.push(`/chat?room=${roomCode.trim().toUpperCase()}`);
     setLoading(false);
