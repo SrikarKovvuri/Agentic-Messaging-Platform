@@ -2,6 +2,9 @@ from flask import Flask, request, session
 from flask_socketio import SocketIO, join_room, leave_room, emit, rooms
 from models import db, User, Room, Message, UserRoom
 from flask import current_app
+import jwt
+from flask import g
+
 '''
 websocket planning
 
@@ -78,13 +81,26 @@ Server -> client events:
 
 def register_socket_events(socketio: SocketIO):
 
+    @socketio.on('connect')
+    def handle_connect(auth):
+        try:
+            token = auth.get("token")
+            payload = jwt.decode(token, current_app.config['SECRET_KEY'], algorithms=['HS256'])
+        
+        except jwt.ExpiredSignatureError:
+            return False
+        
+        except jwt.InvalidTokenError:
+            return False
+        
+        g.user_id = payload['user_id']
 
     @socketio.on('join_room')
     def handle_join_room(data): #data is just payload of event. in this case, it looks like this: { room_code: 'some_code' }
         with current_app.app_context():
             room_code = data.get('room_code')
             #get user_id from oauth, just do this for now
-            user_id = data.get('user_id')  
+            user_id = g.user_id
             socket_id = request.sid
             
             room = Room.query.filter_by(room_code=room_code).first()
@@ -110,7 +126,7 @@ def register_socket_events(socketio: SocketIO):
             room_code = data.get('room_code')
             message = data.get('message')
             #get user_id from oauth, just do this for now
-            user_id = data.get('user_id') 
+            user_id = g.user_id
             socket_id = request.sid
             room = Room.query.filter_by(room_code=room_code).first()
             if room and room.room_id in rooms(socket_id):
@@ -146,4 +162,6 @@ def register_socket_events(socketio: SocketIO):
                 leave_room(room.room_id)
                 #broadcast that user has left
                 #get the user_id from data for now do oauth later
-                emit("user_left", {"user_id": data.get('user_id')}, room=room.room_id)
+                emit("user_left", {"user_id": g.user_id}, room=room.room_id)
+
+
