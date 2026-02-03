@@ -24,10 +24,12 @@ app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
 db.init_app(app)
 migrate = Migrate(app, db)
+# Use threading mode for better compatibility (works with Python 3.13)
+# For production with Python 3.12, can switch back to eventlet
 socketio = SocketIO(
     app,
     cors_allowed_origins=os.getenv("CORS_ORIGINS", "*").split(","),
-    async_mode="eventlet"
+    async_mode="threading"
 )
 
 
