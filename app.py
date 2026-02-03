@@ -6,7 +6,7 @@ from socket_events import register_socket_events
 from flask_socketio import SocketIO
 import secrets
 import string
-from models import db, Room, UserRoom, User
+from models import db, Room, UserRoom, User, Message
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
 import jwt
@@ -45,7 +45,7 @@ def generate_room_code():
 
     return code
 
-def geneerate_jwt_token(user_id):
+def generate_jwt_token(user_id):
     payload = {
         'user_id': user_id,
         'exp': datetime.utcnow() + timedelta(hours=1)  # Token expires in 1 hour
@@ -93,14 +93,12 @@ def login():
     if not provider or not provider_id or not email:
         return jsonify({"error": "Missing required fields"}), 400
     
-    user = User.query.filter_by(oauth_provider=provider, oauth_id=provider_id).first()
     '''
     get the user_id. Then we want to check 
     if user even exists in our db. if not create a new user
 
     Then generate a jwt token and send it back to the user
     '''
-
     user = User.query.filter_by(oauth_provider=provider, oauth_id=provider_id).first()
 
     if not user:
@@ -114,22 +112,32 @@ def login():
         db.session.add(user)
         db.session.commit()
 
-    token = geneerate_jwt_token(user.user_id)
+    token = generate_jwt_token(user.user_id)
     return jsonify({"token": token}), 200
 
+
+@app.route('/get_previous_messages', methods = ['GET'])
+def get_previous_messages():
+    room_code = request.args.get('room_code')
+    if not room_code:
+        return jsonify({"error": "room_code parameter is required"}), 400
+    
+    room = Room.query.filter_by(room_code=room_code).first()
+    if not room:
+        return jsonify({"error": "Room not found"}), 404
+    
+    messages = Message.query.filter_by(room_id=room.room_id).order_by(Message.timestamp.asc()).all()
+    # Convert messages to serializable format
+    messages_data = [{
+        "message_id": msg.message_id,
+        "user_id": msg.user_id,
+        "content": msg.content,
+        "timestamp": msg.timestamp.isoformat() if msg.timestamp else None
+    } for msg in messages]
+    
+    return jsonify({"messages": messages_data}), 200
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     socketio.run(app, host='0.0.0.0', port=port, debug=False)
-
-@app.route('/get_previous_messages', methods = ['GET'])
-def get_previous_messages():
-    data = request.get_json()
-    room_code = data.get('room_code')
-    room = Room.query.filter_by(room_code = room_code).first()
-    if not room:
-        return jsonify({"error": "Room not found"}), 404
-    
-    messages = Message.query.filter_by(room_id = room.room_id).all()
-    return jsonify({"messages": messages}), 200
 

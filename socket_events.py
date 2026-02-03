@@ -83,6 +83,8 @@ def register_socket_events(socketio: SocketIO):
 
     @socketio.on('connect')
     def handle_connect(auth):
+        if not auth or not auth.get("token"):
+            return False
         try:
             token = auth.get("token")
             payload = jwt.decode(token, current_app.config['SECRET_KEY'], algorithms=['HS256'])
@@ -94,6 +96,7 @@ def register_socket_events(socketio: SocketIO):
             return False
         
         session['user_id'] = payload['user_id']
+        return True
 
     @socketio.on('join_room')
     def handle_join_room(data): #data is just payload of event. in this case, it looks like this: { room_code: 'some_code' }
@@ -128,11 +131,19 @@ def register_socket_events(socketio: SocketIO):
             room_code = data.get('room_code')
             message = data.get('message')
             #get user_id from oauth, just do this for now
-            user_id = session['user_id']
+            user_id = session.get('user_id')
+            if not user_id:
+                emit("error", {"message": "Authentication required"})
+                return
+            
             socket_id = request.sid
             room = Room.query.filter_by(room_code=room_code).first()
             if room and room.room_id in rooms(socket_id):
                 user = User.query.filter_by(user_id=user_id).first()
+                if not user:
+                    emit("error", {"message": "User not found"})
+                    return
+                
                 username = user.username
                 emit("new_message", {"user_id": user_id, "message": message, "username": username}, room=room.room_id)
                 
