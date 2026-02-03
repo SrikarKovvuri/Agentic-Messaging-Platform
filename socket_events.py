@@ -5,6 +5,9 @@ from flask import current_app
 import jwt
 from flask import g
 from agent import run_agent
+
+# Store user_id per socket connection to avoid session collision issues in threading mode
+socket_user_map = {}
 '''
 websocket planning
 
@@ -85,49 +88,141 @@ def register_socket_events(socketio: SocketIO):
     def handle_connect(auth):
         # #region agent log
         import logging
+        import json
+        import os
+        from datetime import datetime
         logging.basicConfig(level=logging.INFO)
         logger = logging.getLogger(__name__)
-        logger.info(f"Socket connect attempt - auth present: {auth is not None}, token present: {auth.get('token') if auth else None}")
+        socket_id = request.sid
+        log_data = {
+            "timestamp": datetime.now().isoformat(),
+            "event": "connect_attempt",
+            "socket_id": socket_id,
+            "auth_present": auth is not None,
+            "token_present": bool(auth.get('token') if auth else None)
+        }
+        logger.info(f"Socket connect attempt - socket_id: {socket_id}, auth present: {auth is not None}")
+        try:
+            log_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.cursor', 'debug.log')
+            os.makedirs(os.path.dirname(log_path), exist_ok=True)
+            with open(log_path, 'a') as f:
+                f.write(json.dumps(log_data) + '\n')
+        except: pass
         # #endregion
         
         if not auth or not auth.get("token"):
-            logger.warning("Socket connection rejected: No auth token")
+            logger.warning(f"Socket connection rejected: No auth token - socket_id: {socket_id}")
             return False
         try:
             token = auth.get("token")
             payload = jwt.decode(token, current_app.config['SECRET_KEY'], algorithms=['HS256'])
-            logger.info(f"Socket connection authenticated for user_id: {payload.get('user_id')}")
+            user_id = payload.get('user_id')
+            logger.info(f"Socket connection authenticated - socket_id: {socket_id}, user_id: {user_id}")
         
         except jwt.ExpiredSignatureError:
-            logger.warning("Socket connection rejected: Token expired")
+            logger.warning(f"Socket connection rejected: Token expired - socket_id: {socket_id}")
             return False
         
         except jwt.InvalidTokenError as e:
-            logger.warning(f"Socket connection rejected: Invalid token - {str(e)}")
+            logger.warning(f"Socket connection rejected: Invalid token - socket_id: {socket_id}, error: {str(e)}")
             return False
         
         except Exception as e:
-            logger.error(f"Socket connection error: {str(e)}")
+            logger.error(f"Socket connection error - socket_id: {socket_id}, error: {str(e)}")
             return False
         
-        session['user_id'] = payload['user_id']
-        logger.info(f"Socket connected successfully, session user_id: {session.get('user_id')}")
+        user_id = payload['user_id']
+        # Store user_id per socket connection (not in Flask session to avoid threading issues)
+        socket_user_map[socket_id] = user_id
+        session['user_id'] = user_id  # Keep for backward compatibility
+        
+        # #region agent log
+        log_data = {
+            "timestamp": datetime.now().isoformat(),
+            "event": "connect_success",
+            "socket_id": socket_id,
+            "user_id": user_id,
+            "session_user_id": session.get('user_id'),
+            "socket_user_map_size": len(socket_user_map)
+        }
+        logger.info(f"Socket connected successfully - socket_id: {socket_id}, user_id: {user_id}, total_sockets: {len(socket_user_map)}")
+        try:
+            with open(log_path, 'a') as f:
+                f.write(json.dumps(log_data) + '\n')
+        except: pass
+        # #endregion
         return True
 
     @socketio.on('join_room')
     def handle_join_room(data): #data is just payload of event. in this case, it looks like this: { room_code: 'some_code' }
+        # #region agent log
+        import logging
+        import json
+        import os
+        from datetime import datetime
+        logging.basicConfig(level=logging.INFO)
+        logger = logging.getLogger(__name__)
+        socket_id = request.sid
+        log_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.cursor', 'debug.log')
+        # #endregion
+        
         with current_app.app_context():
             room_code = data.get('room_code')
-            #get user_id from oauth, just do this for now
-            user_id = session['user_id']
-            socket_id = request.sid
+            # Get user_id from socket-specific storage (more reliable than session in threading mode)
+            user_id = socket_user_map.get(socket_id) or session.get('user_id')
+            if not user_id:
+                logger.error(f"join_room failed - socket_id: {socket_id}, no user_id found")
+                emit("error", {"message": "Authentication required"})
+                return
+            
+            # #region agent log
+            current_rooms = rooms(socket_id)
+            log_data = {
+                "timestamp": datetime.now().isoformat(),
+                "event": "join_room_attempt",
+                "socket_id": socket_id,
+                "user_id": user_id,
+                "room_code": room_code,
+                "current_rooms_before": list(current_rooms),
+                "session_user_id": session.get('user_id')
+            }
+            logger.info(f"join_room attempt - socket_id: {socket_id}, user_id: {user_id}, room_code: {room_code}, current_rooms: {list(current_rooms)}")
+            try:
+                os.makedirs(os.path.dirname(log_path), exist_ok=True)
+                with open(log_path, 'a') as f:
+                    f.write(json.dumps(log_data) + '\n')
+            except: pass
+            # #endregion
             
             room = Room.query.filter_by(room_code=room_code).first()
             if room:
                 join_room(room.room_id)
                 #broadcast that new user has arrived
                 user = User.query.filter_by(user_id=user_id).first()
+                if not user:
+                    logger.error(f"join_room failed - socket_id: {socket_id}, user not found: {user_id}")
+                    emit("error", {"message": "User not found"})
+                    return
+                
                 username = user.username
+                # #region agent log
+                rooms_after = rooms(socket_id)
+                log_data = {
+                    "timestamp": datetime.now().isoformat(),
+                    "event": "join_room_success",
+                    "socket_id": socket_id,
+                    "user_id": user_id,
+                    "room_code": room_code,
+                    "room_id": room.room_id,
+                    "rooms_after": list(rooms_after)
+                }
+                logger.info(f"join_room success - socket_id: {socket_id}, user_id: {user_id}, room_id: {room.room_id}, rooms_after: {list(rooms_after)}")
+                try:
+                    with open(log_path, 'a') as f:
+                        f.write(json.dumps(log_data) + '\n')
+                except: pass
+                # #endregion
+                
                 emit("user_joined", {"user_id": user_id, "username": username}, room=room.room_id)
                 
                 #create association in db if it doesn't exists
@@ -144,15 +239,14 @@ def register_socket_events(socketio: SocketIO):
     @socketio.on('send_message')
     def handle_send_message(data):
         with current_app.app_context():
+            socket_id = request.sid
             room_code = data.get('room_code')
             message = data.get('message')
-            #get user_id from oauth, just do this for now
-            user_id = session.get('user_id')
+            # Get user_id from socket-specific storage (more reliable than session in threading mode)
+            user_id = socket_user_map.get(socket_id) or session.get('user_id')
             if not user_id:
                 emit("error", {"message": "Authentication required"})
                 return
-            
-            socket_id = request.sid
             room = Room.query.filter_by(room_code=room_code).first()
             if room and room.room_id in rooms(socket_id):
                 user = User.query.filter_by(user_id=user_id).first()
@@ -194,6 +288,39 @@ def register_socket_events(socketio: SocketIO):
             else:
                 emit("error", {"message": "Room not found"})
 
+    @socketio.on('disconnect')
+    def handle_disconnect():
+        # #region agent log
+        import logging
+        import json
+        import os
+        from datetime import datetime
+        logging.basicConfig(level=logging.INFO)
+        logger = logging.getLogger(__name__)
+        socket_id = request.sid
+        user_id = socket_user_map.get(socket_id) or session.get('user_id')
+        current_rooms_list = list(rooms(socket_id))
+        log_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.cursor', 'debug.log')
+        log_data = {
+            "timestamp": datetime.now().isoformat(),
+            "event": "disconnect",
+            "socket_id": socket_id,
+            "user_id": user_id,
+            "rooms": current_rooms_list,
+            "session_user_id": session.get('user_id'),
+            "socket_user_map_size_before": len(socket_user_map)
+        }
+        logger.warning(f"Socket disconnected - socket_id: {socket_id}, user_id: {user_id}, rooms: {current_rooms_list}")
+        # Clean up socket from user map
+        socket_user_map.pop(socket_id, None)
+        log_data["socket_user_map_size_after"] = len(socket_user_map)
+        try:
+            os.makedirs(os.path.dirname(log_path), exist_ok=True)
+            with open(log_path, 'a') as f:
+                f.write(json.dumps(log_data) + '\n')
+        except: pass
+        # #endregion
+
     @socketio.on('leave_room')
     def handle_leave_room(data): #data looks like {room_code:...}
         '''
@@ -205,12 +332,42 @@ def register_socket_events(socketio: SocketIO):
         if the room exisits loop through and then delete
 
         '''
+        # #region agent log
+        import logging
+        import json
+        import os
+        from datetime import datetime
+        logging.basicConfig(level=logging.INFO)
+        logger = logging.getLogger(__name__)
+        socket_id = request.sid
+        log_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.cursor', 'debug.log')
+        # #endregion
+        
         with current_app.app_context():
             room_code = data.get('room_code')
 
             room = Room.query.filter_by(room_code=room_code).first()
             if room:
-                user_id = session.get('user_id')
+                user_id = socket_user_map.get(socket_id) or session.get('user_id')
+                # #region agent log
+                rooms_before = list(rooms(socket_id))
+                log_data = {
+                    "timestamp": datetime.now().isoformat(),
+                    "event": "leave_room",
+                    "socket_id": socket_id,
+                    "user_id": user_id,
+                    "room_code": room_code,
+                    "room_id": room.room_id,
+                    "rooms_before": rooms_before
+                }
+                logger.info(f"leave_room - socket_id: {socket_id}, user_id: {user_id}, room_id: {room.room_id}")
+                try:
+                    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+                    with open(log_path, 'a') as f:
+                        f.write(json.dumps(log_data) + '\n')
+                except: pass
+                # #endregion
+                
                 leave_room(room.room_id)
                 #broadcast that user has left
                 emit("user_left", {"user_id": user_id}, room=room.room_id)
