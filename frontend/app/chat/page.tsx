@@ -9,6 +9,7 @@ interface Message {
   user_id: number | string;
   message: string;
   isOwn?: boolean;
+  username?: string;
 }
 
 export default function ChatPage() {
@@ -44,7 +45,7 @@ export default function ChatPage() {
     if (status !== 'authenticated' || !session?.user || !roomCode) return;
     
     // If already connected to this room, don't reconnect
-    if (socketRef.current?.connected && currentRoomRef.current === roomCode) {
+    if (socketRef.current && currentRoomRef.current === roomCode && isConnected) {
       return;
     }
     
@@ -73,6 +74,7 @@ export default function ChatPage() {
             provider: user.provider,
             provider_id: user.providerId,
             email: user.email,
+            name: user.name,
           }),
         });
   
@@ -86,7 +88,7 @@ export default function ChatPage() {
         });
   
         // Only proceed if we don't already have a connected socket
-        if (socketRef.current?.connected) {
+        if (socketRef.current) {
           socketInstance.disconnect();
           return;
         }
@@ -283,7 +285,7 @@ export default function ChatPage() {
                     <div className={`max-w-[80%] sm:max-w-[70%] ${isOwnMessage ? 'order-2' : ''}`}>
                       {!isOwnMessage && (
                         <span className="text-xs text-slate-500 ml-3 mb-1 block">
-                          User {msg.user_id}
+                          {msg.username || `User ${msg.user_id}`}
                         </span>
                       )}
                       <div

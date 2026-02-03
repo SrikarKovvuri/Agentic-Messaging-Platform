@@ -107,7 +107,9 @@ def register_socket_events(socketio: SocketIO):
             if room:
                 join_room(room.room_id)
                 #broadcast that new user has arrived
-                emit("user_joined", {"user_id": user_id}, room=room.room_id)
+                user = User.query.filter_by(user_id=user_id).first()
+                username = user.username
+                emit("user_joined", {"user_id": user_id, "username": username}, room=room.room_id)
                 
                 #create association in db if it doesn't exists
                 user_room_link = UserRoom.query.filter_by(user_id=user_id, room_id=room.room_id).first()
@@ -130,12 +132,14 @@ def register_socket_events(socketio: SocketIO):
             socket_id = request.sid
             room = Room.query.filter_by(room_code=room_code).first()
             if room and room.room_id in rooms(socket_id):
-                emit("new_message", {"user_id": user_id, "message": message}, room=room.room_id)
-
+                user = User.query.filter_by(user_id=user_id).first()
+                username = user.username
+                emit("new_message", {"user_id": user_id, "message": message, "username": username}, room=room.room_id)
+                
                 new_message = Message(
                     user_id=user_id,
                     room_id=room.room_id,
-                    content=message
+                    content=message,
                     )
             
                 db.session.add(new_message)

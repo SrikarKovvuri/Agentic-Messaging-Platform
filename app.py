@@ -99,7 +99,7 @@ def login():
 
     if not user:
         user = User(
-            username = email.split('@')[0],
+            username = name if name else email.split('@')[0],
             email = email,
             oauth_provider = provider,
             oauth_id = provider_id
