@@ -55,40 +55,23 @@ export default function ChatPage() {
       isConnecting: isConnectingRef.current
     };
     console.log('[DEBUG] useEffect triggered:', logData);
-    fetch('http://127.0.0.1:7242/ingest/bcd60de0-a0e8-4466-8c1a-ec8cff3c87b8', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        location: 'ChatClient.tsx:44',
-        message: 'useEffect triggered',
-        data: logData,
-        timestamp: Date.now(),
-        sessionId: 'debug-session',
-        runId: 'run1',
-        hypothesisId: 'A'
-      })
-    }).catch(() => {});
     // #endregion
     
     if (status !== 'authenticated' || !session?.user || !roomCode) return;
     
     // If already connected to this room, don't reconnect
-    if (socketRef.current && currentRoomRef.current === roomCode && isConnected) {
+    // Check both React state AND actual socket connection state
+    const socketConnected = socketRef.current?.connected ?? false;
+    if (socketRef.current && currentRoomRef.current === roomCode && (isConnected || socketConnected)) {
       // #region agent log
-      console.log('[DEBUG] Already connected, skipping reconnect');
-      fetch('http://127.0.0.1:7242/ingest/bcd60de0-a0e8-4466-8c1a-ec8cff3c87b8', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          location: 'ChatClient.tsx:48',
-          message: 'Already connected, skipping',
-          data: { roomCode, currentRoom: currentRoomRef.current, isConnected },
-          timestamp: Date.now(),
-          sessionId: 'debug-session',
-          runId: 'run1',
-          hypothesisId: 'A'
-        })
-      }).catch(() => {});
+      console.log('[DEBUG] Already connected, skipping reconnect', {
+        hasSocket: !!socketRef.current,
+        currentRoom: currentRoomRef.current,
+        roomCode,
+        isConnected,
+        socketConnected,
+        socketId: socketRef.current?.id
+      });
       // #endregion
       return;
     }
@@ -111,19 +94,6 @@ export default function ChatPage() {
       if (socketRef.current) {
         // #region agent log
         console.log('[DEBUG] Cleaning up existing socket before new connection');
-        fetch('http://127.0.0.1:7242/ingest/bcd60de0-a0e8-4466-8c1a-ec8cff3c87b8', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            location: 'ChatClient.tsx:62',
-            message: 'Cleaning up existing socket',
-            data: { currentRoom: currentRoomRef.current, newRoomCode: roomCode },
-            timestamp: Date.now(),
-            sessionId: 'debug-session',
-            runId: 'run1',
-            hypothesisId: 'E'
-          })
-        }).catch(() => {});
         // #endregion
         socketRef.current.removeAllListeners();
         socketRef.current.disconnect();
@@ -176,20 +146,7 @@ export default function ChatPage() {
         // Set up listeners - these will be cleaned up on disconnect
         socketInstance.on('connect', () => {
           // #region agent log
-          console.log('[DEBUG] Socket connected with auth!');
-          fetch('http://127.0.0.1:7242/ingest/bcd60de0-a0e8-4466-8c1a-ec8cff3c87b8', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              location: 'ChatClient.tsx:112',
-              message: 'Socket connected',
-              data: { roomCode, socketId: socketInstance.id },
-              timestamp: Date.now(),
-              sessionId: 'debug-session',
-              runId: 'run1',
-              hypothesisId: 'A'
-            })
-          }).catch(() => {});
+          console.log('[DEBUG] Socket connected with auth!', { roomCode, socketId: socketInstance.id });
           // #endregion
           setIsConnected(true);
           socketInstance.emit('join_room', { room_code: roomCode });
@@ -198,20 +155,14 @@ export default function ChatPage() {
 
         socketInstance.on('disconnect', (reason) => {
           // #region agent log
-          console.log('[DEBUG] Socket disconnected:', reason);
-          fetch('http://127.0.0.1:7242/ingest/bcd60de0-a0e8-4466-8c1a-ec8cff3c87b8', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              location: 'ChatClient.tsx:119',
-              message: 'Socket disconnected',
-              data: { reason, roomCode, currentRoom: currentRoomRef.current },
-              timestamp: Date.now(),
-              sessionId: 'debug-session',
-              runId: 'run1',
-              hypothesisId: 'C'
-            })
-          }).catch(() => {});
+          console.log('[DEBUG] Socket disconnected event received:', { 
+            reason, 
+            roomCode, 
+            currentRoom: currentRoomRef.current,
+            socketId: socketInstance.id,
+            timestamp: new Date().toISOString(),
+            stackTrace: new Error().stack
+          });
           // #endregion
           setIsConnected(false);
           isConnectingRef.current = false;
@@ -223,39 +174,21 @@ export default function ChatPage() {
 
         socketInstance.on('user_joined', (data) => {
           // #region agent log
-          console.log('[DEBUG] User joined:', data.user_id);
-          fetch('http://127.0.0.1:7242/ingest/bcd60de0-a0e8-4466-8c1a-ec8cff3c87b8', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              location: 'ChatClient.tsx:128',
-              message: 'User joined event received',
-              data: { joinedUserId: data.user_id, currentRoom: currentRoomRef.current },
-              timestamp: Date.now(),
-              sessionId: 'debug-session',
-              runId: 'run1',
-              hypothesisId: 'B'
-            })
-          }).catch(() => {});
+          console.log('[DEBUG] User joined event received:', { 
+            joinedUserId: data.user_id, 
+            joinedUsername: data.username,
+            currentRoom: currentRoomRef.current,
+            mySocketId: socketInstance.id,
+            isConnected,
+            timestamp: new Date().toISOString()
+          });
           // #endregion
+          // Don't update any state - this is just informational
         });
 
         socketInstance.on('user_left', (data) => {
           // #region agent log
-          console.log('[DEBUG] User left:', data.user_id);
-          fetch('http://127.0.0.1:7242/ingest/bcd60de0-a0e8-4466-8c1a-ec8cff3c87b8', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              location: 'ChatClient.tsx:132',
-              message: 'User left event received',
-              data: { leftUserId: data.user_id },
-              timestamp: Date.now(),
-              sessionId: 'debug-session',
-              runId: 'run1',
-              hypothesisId: 'B'
-            })
-          }).catch(() => {});
+          console.log('[DEBUG] User left:', { leftUserId: data.user_id });
           // #endregion
         });
   
@@ -279,47 +212,70 @@ export default function ChatPage() {
     connectWithAuth();
   
     return () => {
-      // Only cleanup if we're actually leaving the room or unmounting
-      // Don't cleanup if roomCode hasn't changed (prevents unnecessary disconnects)
+      // Only cleanup on unmount or when roomCode actually changes
+      // Capture current values at cleanup time
       const currentRoom = currentRoomRef.current;
-      if (currentRoom && currentRoom !== roomCode) {
+      const currentSocket = socketRef.current;
+      const socketActuallyConnected = currentSocket?.connected ?? false;
+      
+      // #region agent log
+      console.log('[DEBUG] Cleanup function called', { 
+        currentRoom, 
+        newRoomCode: roomCode, 
+        hasSocket: !!currentSocket,
+        socketConnected: socketActuallyConnected,
+        isConnected,
+        status,
+        socketId: currentSocket?.id
+      });
+      // #endregion
+      
+      // Only disconnect if:
+      // 1. Room code is actually changing (not just useEffect re-running)
+      // 2. Component is unmounting (roomCode becomes null/undefined)
+      // 3. Status changed to unauthenticated
+      // AND socket is actually connected (don't disconnect if already disconnected)
+      const roomChanged = currentRoom && currentRoom !== roomCode;
+      const isUnmounting = !roomCode;
+      const isUnauthenticated = status === 'unauthenticated';
+      const shouldDisconnect = (roomChanged || isUnmounting || isUnauthenticated) && socketActuallyConnected;
+      
+      if (shouldDisconnect && currentSocket) {
         // #region agent log
-        console.log('[DEBUG] Cleanup: Room changed, disconnecting');
-        fetch('http://127.0.0.1:7242/ingest/bcd60de0-a0e8-4466-8c1a-ec8cff3c87b8', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            location: 'ChatClient.tsx:155',
-            message: 'Cleanup: Room changed',
-            data: { oldRoom: currentRoom, newRoom: roomCode },
-            timestamp: Date.now(),
-            sessionId: 'debug-session',
-            runId: 'run1',
-            hypothesisId: 'D'
-          })
-        }).catch(() => {});
+        const reason = roomChanged ? 'room_changed' : isUnmounting ? 'unmounting' : 'unauthenticated';
+        console.log('[DEBUG] Cleanup: Disconnecting socket', { 
+          reason,
+          oldRoom: currentRoom,
+          newRoom: roomCode,
+          socketId: currentSocket.id
+        });
         // #endregion
         isConnectingRef.current = false;
-        if (socketRef.current) {
-          socketRef.current.removeAllListeners();
-          socketRef.current.disconnect();
-          socketRef.current = null;
-          currentRoomRef.current = null;
-          setSocket(null);
-        }
-      } else if (!roomCode) {
-        // Only cleanup if roomCode is null/undefined (component unmounting or invalid state)
-        isConnectingRef.current = false;
-        if (socketRef.current) {
-          socketRef.current.removeAllListeners();
-          socketRef.current.disconnect();
-          socketRef.current = null;
-          currentRoomRef.current = null;
-          setSocket(null);
-        }
+        currentSocket.removeAllListeners();
+        currentSocket.disconnect();
+        socketRef.current = null;
+        currentRoomRef.current = null;
+        setSocket(null);
+      } else if (currentSocket && !socketActuallyConnected) {
+        // #region agent log
+        console.log('[DEBUG] Cleanup: Socket already disconnected, just cleaning refs');
+        // #endregion
+        socketRef.current = null;
+        currentRoomRef.current = null;
+        setSocket(null);
+      } else {
+        // #region agent log
+        console.log('[DEBUG] Cleanup: Skipping disconnect', { 
+          currentRoom, 
+          roomCode, 
+          shouldDisconnect,
+          socketActuallyConnected,
+          reason: 'room unchanged and component still mounted'
+        });
+        // #endregion
       }
     };
-  }, [roomCode, session?.user?.email, status]); // Use email instead of entire session object
+  }, [roomCode, status]); // Removed session?.user?.email to prevent unnecessary re-runs
 
   // Send message
   const sendMessage = () => {

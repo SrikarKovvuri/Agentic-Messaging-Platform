@@ -196,6 +196,13 @@ def register_socket_events(socketio: SocketIO):
             
             room = Room.query.filter_by(room_code=room_code).first()
             if room:
+                # #region agent log
+                # Get all sockets currently in the room BEFORE joining
+                from flask_socketio import SocketIO as SIO
+                # Note: We can't easily get all sockets in a room, but we can log what we know
+                logger.info(f"BEFORE join_room - socket_id: {socket_id}, user_id: {user_id}, room_id: {room.room_id}, total_sockets_in_map: {len(socket_user_map)}")
+                # #endregion
+                
                 join_room(room.room_id)
                 #broadcast that new user has arrived
                 user = User.query.filter_by(user_id=user_id).first()
@@ -207,6 +214,8 @@ def register_socket_events(socketio: SocketIO):
                 username = user.username
                 # #region agent log
                 rooms_after = rooms(socket_id)
+                # Get all user_ids currently in socket_user_map for debugging
+                all_socket_users = {sid: uid for sid, uid in socket_user_map.items()}
                 log_data = {
                     "timestamp": datetime.now().isoformat(),
                     "event": "join_room_success",
@@ -214,9 +223,11 @@ def register_socket_events(socketio: SocketIO):
                     "user_id": user_id,
                     "room_code": room_code,
                     "room_id": room.room_id,
-                    "rooms_after": list(rooms_after)
+                    "rooms_after": list(rooms_after),
+                    "total_sockets": len(socket_user_map),
+                    "all_socket_users": all_socket_users
                 }
-                logger.info(f"join_room success - socket_id: {socket_id}, user_id: {user_id}, room_id: {room.room_id}, rooms_after: {list(rooms_after)}")
+                logger.info(f"AFTER join_room - socket_id: {socket_id}, user_id: {user_id}, room_id: {room.room_id}, rooms_after: {list(rooms_after)}, total_sockets: {len(socket_user_map)}")
                 try:
                     with open(log_path, 'a') as f:
                         f.write(json.dumps(log_data) + '\n')
