@@ -1,45 +1,50 @@
-/*
-
-this page will read the room from the query params
-and then connect to the room with the flask endpoint 
-
-and then this will render that chat component
-
-*/
-
 'use client';
 
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
+
+interface Message {
+  user_id: number | string;
+  message: string;
+  isOwn?: boolean;
+}
 
 export default function ChatPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const socketRef = useRef<Socket | null>(null);
 
   const roomCode = searchParams.get('room');
 
   const [socket, setSocket] = useState<Socket | null>(null);
-  const [messages, setMessages] = useState<any[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
+  const [isConnected, setIsConnected] = useState(false);
 
-  //  auth guard
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  // Auth guard
   useEffect(() => {
     if (status === 'unauthenticated') {
       router.push('/');
     }
   }, [status, router]);
 
-  // connect socket
-
+  // Connect socket
   useEffect(() => {
     if (status !== 'authenticated' || !session?.user || !roomCode) return;
     
+    // Prevent duplicate connections
+    if (socketRef.current) return;
+    
     const user = session.user;
-    let socketInstance: Socket | null = null;
-    let listenersSetup = false;
   
     async function connectWithAuth() {
       try {
@@ -58,33 +63,44 @@ export default function ChatPage() {
         const { token } = await response.json();
         if (!token) throw new Error('No token received');
   
-        socketInstance = io('http://localhost:5000', {
+        const socketInstance = io('http://localhost:5000', {
           auth: { token },
         });
   
+        socketRef.current = socketInstance;
         setSocket(socketInstance);
   
-        // Set up listeners ONCE when socket is created
-        if (!listenersSetup) {
-          socketInstance.on('connect', () => {
-            console.log('Socket connected with auth!');
-            socketInstance?.emit('join_room', { room_code: roomCode });
-          });
+        socketInstance.on('connect', () => {
+          console.log('Socket connected with auth!');
+          setIsConnected(true);
+          socketInstance.emit('join_room', { room_code: roomCode });
+        });
+
+        socketInstance.on('disconnect', () => {
+          setIsConnected(false);
+        });
   
-          socketInstance.on('new_message', (data) => {
-            setMessages((prev) => [...prev, data]);
-          });
+        socketInstance.on('new_message', (data: Message) => {
+          setMessages((prev) => [...prev, data]);
+        });
+
+        socketInstance.on('user_joined', (data) => {
+          console.log('User joined:', data.user_id);
+        });
+
+        socketInstance.on('user_left', (data) => {
+          console.log('User left:', data.user_id);
+        });
   
-          socketInstance.on('error', (error) => {
-            console.error('Socket error:', error);
-          });
+        socketInstance.on('error', (error) => {
+          console.error('Socket error:', error);
+        });
   
-          socketInstance.on('connect_error', (error) => {
-            console.error('Socket connection failed:', error);
-          });
-  
-          listenersSetup = true;
-        }
+        socketInstance.on('connect_error', (error) => {
+          console.error('Socket connection failed:', error);
+          setIsConnected(false);
+        });
+
       } catch (error) {
         console.error('Failed to get JWT or connect socket:', error);
       }
@@ -93,15 +109,15 @@ export default function ChatPage() {
     connectWithAuth();
   
     return () => {
-      if (socketInstance) {
-        socketInstance.removeAllListeners(); // Remove all listeners
-        socketInstance.disconnect();
-        socketInstance = null;
+      if (socketRef.current) {
+        socketRef.current.removeAllListeners();
+        socketRef.current.disconnect();
+        socketRef.current = null;
       }
     };
   }, [roomCode, session, status]);
 
-  // send message
+  // Send message
   const sendMessage = () => {
     if (!socket || !input.trim()) return;
 
@@ -113,62 +129,171 @@ export default function ChatPage() {
     setInput('');
   };
 
-  // leave chat and go back to rooms
+  // Handle Enter key
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  };
+
+  // Leave chat
   const handleLeaveChat = () => {
-    if (socket && roomCode) {
-      // Emit leave_room event to notify server and other users
-      socket.emit('leave_room', {
-        room_code: roomCode,
-      });
-      // Clean up socket connection
-      socket.removeAllListeners();
-      socket.disconnect();
+    if (socketRef.current && roomCode) {
+      socketRef.current.emit('leave_room', { room_code: roomCode });
+      socketRef.current.removeAllListeners();
+      socketRef.current.disconnect();
+      socketRef.current = null;
       setSocket(null);
     }
-    // Navigate back to rooms page
     router.push('/rooms');
   };
 
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="flex items-center gap-3">
+          <div className="w-2 h-2 bg-indigo-500 rounded-full animate-pulse"></div>
+          <div className="w-2 h-2 bg-indigo-500 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
+          <div className="w-2 h-2 bg-indigo-500 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }}></div>
+        </div>
+      </div>
+    );
+  }
+
   if (!roomCode) {
-    return <div>Invalid room</div>;
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-slate-500 mb-4">Invalid room</p>
+          <button
+            onClick={() => router.push('/rooms')}
+            className="text-indigo-600 hover:text-indigo-700 font-medium"
+          >
+            Go back to rooms
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="h-screen flex flex-col">
+    <div className="h-screen bg-slate-100 flex flex-col">
       {/* Header */}
-      <div className="p-4 bg-blue-700 text-white font-bold flex justify-between items-center">
-        <span>Room: {roomCode}</span>
-        <button
-          onClick={handleLeaveChat}
-          className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded text-sm font-semibold transition"
-        >
-          Leave Chat
-        </button>
-      </div>
-
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-2">
-        {messages.map((msg, i) => (
-          <div key={i}>
-            <span className="font-semibold">{msg.user_id}</span>: {msg.message}
+      <header className="bg-white border-b border-slate-200 px-4 sm:px-6 py-4 flex-shrink-0">
+        <div className="max-w-4xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={handleLeaveChat}
+              className="p-2 -ml-2 hover:bg-slate-100 rounded-xl transition-colors"
+              title="Leave chat"
+            >
+              <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="font-semibold text-slate-900">Room</h1>
+                <span className="font-mono text-sm bg-slate-100 px-2 py-0.5 rounded-md text-slate-600 tracking-wider">
+                  {roomCode}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-slate-300'}`}></div>
+                <span className="text-xs text-slate-500">
+                  {isConnected ? 'Connected' : 'Connecting...'}
+                </span>
+              </div>
+            </div>
           </div>
-        ))}
+          
+          <button
+            onClick={handleLeaveChat}
+            className="text-sm text-slate-500 hover:text-red-600 font-medium transition-colors hidden sm:block"
+          >
+            Leave Room
+          </button>
+        </div>
+      </header>
+
+      {/* Messages Area */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6">
+          {messages.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full min-h-[300px] text-center">
+              <div className="w-16 h-16 bg-slate-200 rounded-full flex items-center justify-center mb-4">
+                <svg className="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+              </div>
+              <p className="text-slate-500">No messages yet</p>
+              <p className="text-sm text-slate-400 mt-1">Be the first to say something!</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {messages.map((msg, i) => {
+                const isOwnMessage = session?.user?.email?.split('@')[0] === msg.user_id?.toString() || 
+                                     session?.user?.name?.split(' ')[0].toLowerCase() === msg.user_id?.toString().toLowerCase();
+                
+                return (
+                  <div
+                    key={i}
+                    className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'} animate-fade-in`}
+                  >
+                    <div className={`max-w-[80%] sm:max-w-[70%] ${isOwnMessage ? 'order-2' : ''}`}>
+                      {!isOwnMessage && (
+                        <span className="text-xs text-slate-500 ml-3 mb-1 block">
+                          User {msg.user_id}
+                        </span>
+                      )}
+                      <div
+                        className={`px-4 py-3 rounded-2xl ${
+                          isOwnMessage
+                            ? 'bg-indigo-600 text-white rounded-br-md'
+                            : 'bg-white text-slate-900 rounded-bl-md shadow-sm border border-slate-100'
+                        }`}
+                      >
+                        <p className="text-sm leading-relaxed break-words">{msg.message}</p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              <div ref={messagesEndRef} />
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Input */}
-      <div className="p-4 flex gap-2 border-t">
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          className="flex-1 border px-3 py-2 rounded"
-          placeholder="Type a message..."
-        />
-        <button
-          onClick={sendMessage}
-          className="bg-blue-600 text-white px-4 py-2 rounded"
-        >
-          Send
-        </button>
+      {/* Input Area */}
+      <div className="bg-white border-t border-slate-200 px-4 sm:px-6 py-4 flex-shrink-0">
+        <div className="max-w-4xl mx-auto">
+          <div className="flex items-end gap-3">
+            <div className="flex-1 relative">
+              <input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyPress}
+                className="w-full px-4 py-3 bg-slate-100 border-0 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all resize-none"
+                placeholder="Type a message..."
+                disabled={!isConnected}
+              />
+            </div>
+            <button
+              onClick={sendMessage}
+              disabled={!input.trim() || !isConnected}
+              className="p-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-xl transition-all shadow-sm hover:shadow-md"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+              </svg>
+            </button>
+          </div>
+          <p className="text-xs text-slate-400 mt-2 text-center">
+            Press Enter to send
+          </p>
+        </div>
       </div>
     </div>
   );
