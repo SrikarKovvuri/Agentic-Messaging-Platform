@@ -34,86 +34,72 @@ export default function ChatPage() {
 
   // connect socket
 
-
-  // Remove lines 35-37 (the comment lines)
-
-// Replace lines 39-111 with:
-
-useEffect(() => {
-  // Wait for auth to complete before connecting
-  if (status !== 'authenticated' || !session?.user || !roomCode) return;
-  const user = session.user;
-  let socketInstance: Socket | null = null;
-
-  async function connectWithAuth() {
-    try {
-      // Step 1: Exchange NextAuth session for Flask JWT
-      const response = await fetch('http://localhost:5000/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          provider: user.provider,
-          provider_id: user.providerId,
-          email: user.email,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to get JWT token');
-      }
-
-      const data = await response.json();
-      const jwtToken = data.token;
-
-      if (!jwtToken) {
-        throw new Error('No token received from server');
-      }
-
-      // Step 2: Connect to Socket.IO WITH the token
-      socketInstance = io('http://localhost:5000', {
-        auth: {
-          token: jwtToken,
-        },
-      });
-
-      setSocket(socketInstance);
-
-      socketInstance.on('connect', () => {
-        console.log('Socket connected with auth!');
-        socketInstance?.emit('join_room', {
-          room_code: roomCode,
+  useEffect(() => {
+    if (status !== 'authenticated' || !session?.user || !roomCode) return;
+    
+    const user = session.user;
+    let socketInstance: Socket | null = null;
+    let listenersSetup = false;
+  
+    async function connectWithAuth() {
+      try {
+        const response = await fetch('http://localhost:5000/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            provider: user.provider,
+            provider_id: user.providerId,
+            email: user.email,
+          }),
         });
-      });
-
-      socketInstance.on('new_message', (data) => {
-        setMessages((prev) => [...prev, data]);
-      });
-
-      socketInstance.on('error', (error) => {
-        console.error('Socket error:', error);
-      });
-
-      socketInstance.on('connect_error', (error) => {
-        console.error('Socket connection failed:', error);
-      });
-
-    } catch (error) {
-      console.error('Failed to get JWT or connect socket:', error);
+  
+        if (!response.ok) throw new Error('Failed to get JWT token');
+  
+        const { token } = await response.json();
+        if (!token) throw new Error('No token received');
+  
+        socketInstance = io('http://localhost:5000', {
+          auth: { token },
+        });
+  
+        setSocket(socketInstance);
+  
+        // Set up listeners ONCE when socket is created
+        if (!listenersSetup) {
+          socketInstance.on('connect', () => {
+            console.log('Socket connected with auth!');
+            socketInstance?.emit('join_room', { room_code: roomCode });
+          });
+  
+          socketInstance.on('new_message', (data) => {
+            setMessages((prev) => [...prev, data]);
+          });
+  
+          socketInstance.on('error', (error) => {
+            console.error('Socket error:', error);
+          });
+  
+          socketInstance.on('connect_error', (error) => {
+            console.error('Socket connection failed:', error);
+          });
+  
+          listenersSetup = true;
+        }
+      } catch (error) {
+        console.error('Failed to get JWT or connect socket:', error);
+      }
     }
-  }
-
-  connectWithAuth();
-
-  // Cleanup function
-  return () => {
-    if (socketInstance) {
-      socketInstance.disconnect();
-      socketInstance = null;
-    }
-  };
-}, [roomCode, session, status]);
+  
+    connectWithAuth();
+  
+    return () => {
+      if (socketInstance) {
+        socketInstance.removeAllListeners(); // Remove all listeners
+        socketInstance.disconnect();
+        socketInstance = null;
+      }
+    };
+  }, [roomCode, session, status]);
 
   // send message
   const sendMessage = () => {
