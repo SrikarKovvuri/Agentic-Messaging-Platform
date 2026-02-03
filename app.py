@@ -22,8 +22,8 @@ db.init_app(app)
 migrate = Migrate(app, db)
 socketio = SocketIO(
     app,
-    cors_allowed_origins="*",
-    async_mode="threading" 
+    cors_allowed_origins=os.getenv("CORS_ORIGINS", "*").split(","),
+    async_mode="eventlet"
 )
 
 
@@ -98,12 +98,12 @@ def login():
     user = User.query.filter_by(oauth_provider=provider, oauth_id=provider_id).first()
 
     if not user:
+        name = data.get('name')  # Get name from request
         user = User(
             username = name if name else email.split('@')[0],
             email = email,
             oauth_provider = provider,
             oauth_id = provider_id
-            
         )
         db.session.add(user)
         db.session.commit()
@@ -113,8 +113,8 @@ def login():
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
-    socketio.run(app, debug=True)
+    port = int(os.environ.get('PORT', 5000))
+    socketio.run(app, host='0.0.0.0', port=port, debug=False)
 
 @app.route('/get_previous_messages', methods = ['GET'])
 def get_previous_messages():

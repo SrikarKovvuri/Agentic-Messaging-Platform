@@ -42,7 +42,8 @@ export default function RoomsPage() {
     setError('');
 
     try {
-      const response = await axios.post('http://localhost:5000/room_code_check', {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+      const response = await axios.post(`${apiUrl}/room_code_check`, {
         room_code: roomCode.trim().toUpperCase()
       });
       if (!response.data.exists) {
@@ -64,7 +65,8 @@ export default function RoomsPage() {
     setError('');
 
     try {
-      const response = await axios.post('http://localhost:5000/create_room');
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+      const response = await axios.post(`${apiUrl}/create_room`);
       const newRoomCode = response.data.room_code;
       setCreatedRoomCode(newRoomCode);
       setLoading(false);

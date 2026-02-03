@@ -67,7 +67,9 @@ export default function ChatPage() {
       }
   
       try {
-        const response = await fetch('http://localhost:5000/auth/login', {
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+        
+        const response = await fetch(`${apiUrl}/auth/login`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -83,7 +85,7 @@ export default function ChatPage() {
         const { token } = await response.json();
         if (!token) throw new Error('No token received');
   
-        const socketInstance = io('http://localhost:5000', {
+        const socketInstance = io(apiUrl, {
           auth: { token },
         });
   
