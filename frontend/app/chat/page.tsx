@@ -17,6 +17,8 @@ export default function ChatPage() {
   const searchParams = useSearchParams();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const socketRef = useRef<Socket | null>(null);
+  const isConnectingRef = useRef(false);
+  const currentRoomRef = useRef<string | null>(null);
 
   const roomCode = searchParams.get('room');
 
@@ -41,12 +43,28 @@ export default function ChatPage() {
   useEffect(() => {
     if (status !== 'authenticated' || !session?.user || !roomCode) return;
     
-    // Prevent duplicate connections
-    if (socketRef.current) return;
+    // If already connected to this room, don't reconnect
+    if (socketRef.current?.connected && currentRoomRef.current === roomCode) {
+      return;
+    }
+    
+    // Prevent multiple simultaneous connection attempts
+    if (isConnectingRef.current) return;
     
     const user = session.user;
   
     async function connectWithAuth() {
+      // Mark as connecting
+      isConnectingRef.current = true;
+      
+      // Clean up any existing socket first
+      if (socketRef.current) {
+        socketRef.current.removeAllListeners();
+        socketRef.current.disconnect();
+        socketRef.current = null;
+        setSocket(null);
+      }
+  
       try {
         const response = await fetch('http://localhost:5000/auth/login', {
           method: 'POST',
@@ -67,17 +85,28 @@ export default function ChatPage() {
           auth: { token },
         });
   
-        socketRef.current = socketInstance;
-        setSocket(socketInstance);
+        // Only proceed if we don't already have a connected socket
+        if (socketRef.current?.connected) {
+          socketInstance.disconnect();
+          return;
+        }
   
+        socketRef.current = socketInstance;
+        currentRoomRef.current = roomCode;
+        setSocket(socketInstance);
+        setMessages([]); // Reset messages when joining a new room
+  
+        // Set up listeners - these will be cleaned up on disconnect
         socketInstance.on('connect', () => {
           console.log('Socket connected with auth!');
           setIsConnected(true);
           socketInstance.emit('join_room', { room_code: roomCode });
+          isConnectingRef.current = false;
         });
 
         socketInstance.on('disconnect', () => {
           setIsConnected(false);
+          isConnectingRef.current = false;
         });
   
         socketInstance.on('new_message', (data: Message) => {
@@ -94,25 +123,31 @@ export default function ChatPage() {
   
         socketInstance.on('error', (error) => {
           console.error('Socket error:', error);
+          isConnectingRef.current = false;
         });
   
         socketInstance.on('connect_error', (error) => {
           console.error('Socket connection failed:', error);
           setIsConnected(false);
+          isConnectingRef.current = false;
         });
 
       } catch (error) {
         console.error('Failed to get JWT or connect socket:', error);
+        isConnectingRef.current = false;
       }
     }
   
     connectWithAuth();
   
     return () => {
+      isConnectingRef.current = false;
       if (socketRef.current) {
         socketRef.current.removeAllListeners();
         socketRef.current.disconnect();
         socketRef.current = null;
+        currentRoomRef.current = null;
+        setSocket(null);
       }
     };
   }, [roomCode, session, status]);
@@ -139,13 +174,17 @@ export default function ChatPage() {
 
   // Leave chat
   const handleLeaveChat = () => {
+    isConnectingRef.current = false;
     if (socketRef.current && roomCode) {
       socketRef.current.emit('leave_room', { room_code: roomCode });
       socketRef.current.removeAllListeners();
       socketRef.current.disconnect();
       socketRef.current = null;
-      setSocket(null);
+      currentRoomRef.current = null;
     }
+    setSocket(null);
+    setMessages([]);
+    setIsConnected(false);
     router.push('/rooms');
   };
 
