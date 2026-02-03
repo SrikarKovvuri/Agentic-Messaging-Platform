@@ -159,9 +159,9 @@ def register_socket_events(socketio: SocketIO):
 
             room = Room.query.filter_by(room_code=room_code).first()
             if room:
+                user_id = session.get('user_id')
                 leave_room(room.room_id)
                 #broadcast that user has left
-                #get the user_id from data for now do oauth later
-                emit("user_left", {"user_id": g.user_id}, room=room.room_id)
+                emit("user_left", {"user_id": user_id}, room=room.room_id)
 
 

@@ -116,3 +116,14 @@ if __name__ == '__main__':
     app.run(debug=True)
     socketio.run(app, debug=True)
 
+@app.route('/get_previous_messages', methods = ['GET'])
+def get_previous_messages():
+    data = request.get_json()
+    room_code = data.get('room_code')
+    room = Room.query.filter_by(room_code = room_code).first()
+    if not room:
+        return jsonify({"error": "Room not found"}), 404
+    
+    messages = Message.query.filter_by(room_id = room.room_id).all()
+    return jsonify({"messages": messages}), 200
+

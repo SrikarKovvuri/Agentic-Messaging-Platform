@@ -113,6 +113,22 @@ export default function ChatPage() {
     setInput('');
   };
 
+  // leave chat and go back to rooms
+  const handleLeaveChat = () => {
+    if (socket && roomCode) {
+      // Emit leave_room event to notify server and other users
+      socket.emit('leave_room', {
+        room_code: roomCode,
+      });
+      // Clean up socket connection
+      socket.removeAllListeners();
+      socket.disconnect();
+      setSocket(null);
+    }
+    // Navigate back to rooms page
+    router.push('/rooms');
+  };
+
   if (!roomCode) {
     return <div>Invalid room</div>;
   }
@@ -120,8 +136,14 @@ export default function ChatPage() {
   return (
     <div className="h-screen flex flex-col">
       {/* Header */}
-      <div className="p-4 bg-blue-700 text-white font-bold">
-        Room: {roomCode}
+      <div className="p-4 bg-blue-700 text-white font-bold flex justify-between items-center">
+        <span>Room: {roomCode}</span>
+        <button
+          onClick={handleLeaveChat}
+          className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded text-sm font-semibold transition"
+        >
+          Leave Chat
+        </button>
       </div>
 
       {/* Messages */}
