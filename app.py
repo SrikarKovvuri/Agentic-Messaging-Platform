@@ -35,13 +35,25 @@ db.init_app(app)
 migrate = Migrate(app, db)
 # Use threading mode for better compatibility (works with Python 3.13)
 # For production with Python 3.12, can switch back to eventlet
+# #region agent log - Hypothesis A: ping/pong configuration for Render 60s timeout
+import logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+logger.info(f"Initializing SocketIO with ping_interval=25, ping_timeout=10 (Render timeout fix)")
+# #endregion
 socketio = SocketIO(
     app,
     cors_allowed_origins=cors_origins,
     async_mode="threading",
     cors_credentials=True,
     allow_upgrades=True,
-    transports=['websocket', 'polling']
+    transports=['websocket', 'polling'],
+    # Hypothesis A: Configure ping/pong to keep connection alive through Render's 60s timeout
+    ping_interval=25,  # Send ping every 25 seconds
+    ping_timeout=10,   # Wait 10 seconds for pong response
+    # Hypothesis B: Enable engineio logger to see if pings are being sent
+    logger=True,
+    engineio_logger=True
 )
 
 

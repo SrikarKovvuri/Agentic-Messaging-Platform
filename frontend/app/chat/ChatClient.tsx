@@ -111,16 +111,22 @@ export default function ChatPage() {
         const { token } = await response.json();
         if (!token) throw new Error('No token received');
   
+        // #region agent log
+        console.log('[DEBUG] Creating socket with ping config (Hypothesis A/C - Render 60s timeout fix)');
+        // #endregion
         const socketInstance = io(apiUrl, {
           auth: { token },
           transports: ['websocket', 'polling'],
           upgrade: true,
           rememberUpgrade: true,
           reconnection: true,
-          reconnectionAttempts: 5,
+          reconnectionAttempts: Infinity,  // Keep trying to reconnect
           reconnectionDelay: 1000,
+          reconnectionDelayMax: 5000,
           withCredentials: true,
           forceNew: false,
+          // Hypothesis A/C: Match server ping settings to keep connection alive through Render's 60s timeout
+          timeout: 20000,  // Connection timeout
         });
   
         // Only proceed if we don't already have a connected socket
@@ -128,16 +134,46 @@ export default function ChatPage() {
           socketInstance.disconnect();
           return;
         }
-  
+
         socketRef.current = socketInstance;
         currentRoomRef.current = roomCode;
         setSocket(socketInstance);
         setMessages([]); // Reset messages when joining a new room
-  
+
+        // #region agent log - Hypothesis A/B: Track ping/pong activity
+        let lastPingTime: number | null = null;
+        let pingCount = 0;
+        
+        // Socket.IO internally handles ping/pong, but we can track the underlying engine
+        socketInstance.io.engine?.on('ping', () => {
+          pingCount++;
+          const now = Date.now();
+          const timeSinceLastPing = lastPingTime ? now - lastPingTime : 0;
+          console.log('[DEBUG] Ping sent to server', { 
+            pingCount, 
+            timeSinceLastPing: timeSinceLastPing + 'ms',
+            timestamp: new Date().toISOString() 
+          });
+          lastPingTime = now;
+        });
+        
+        socketInstance.io.engine?.on('pong', () => {
+          console.log('[DEBUG] Pong received from server', { 
+            pingCount,
+            timestamp: new Date().toISOString() 
+          });
+        });
+        // #endregion
+
         // Set up listeners - these will be cleaned up on disconnect
         socketInstance.on('connect', () => {
           // #region agent log
-          console.log('[DEBUG] Socket connected with auth!', { roomCode, socketId: socketInstance.id });
+          console.log('[DEBUG] Socket connected with auth!', { 
+            roomCode, 
+            socketId: socketInstance.id,
+            transport: socketInstance.io.engine?.transport?.name,
+            timestamp: new Date().toISOString()
+          });
           // #endregion
           setIsConnected(true);
           socketInstance.emit('join_room', { room_code: roomCode });
@@ -151,8 +187,10 @@ export default function ChatPage() {
             roomCode, 
             currentRoom: currentRoomRef.current,
             socketId: socketInstance.id,
+            transport: socketInstance.io.engine?.transport?.name || 'unknown',
             timestamp: new Date().toISOString(),
-            stackTrace: new Error().stack
+            // Hypothesis A/B: Track if ping/pong was working
+            pingCountBeforeDisconnect: pingCount
           });
           // #endregion
           setIsConnected(false);
