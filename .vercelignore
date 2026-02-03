@@ -1,0 +1,16 @@
+*.py
+*.pyc
+__pycache__/
+migrations/
+models.py
+socket_events.py
+agent.py
+app.py
+requirements.txt
+Procfile
+runtime.txt
+render.yaml
+.env
+build.sh
+*.md
+!frontend/README.md

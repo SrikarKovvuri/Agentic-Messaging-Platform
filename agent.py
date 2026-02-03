@@ -6,8 +6,20 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from models import Message, User, Room
 from flask import current_app
+import os
 
-llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.2)
+# Lazy initialization - only create LLM when needed
+_llm = None
+
+def get_llm():
+    """Get or create the LLM instance. Lazy initialization to avoid errors on import."""
+    global _llm
+    if _llm is None:
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY environment variable is not set")
+        _llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.2, api_key=api_key)
+    return _llm
 
 
 def get_room_conversation_history(room_id, limit=20):
@@ -52,7 +64,8 @@ def run_agent(user_input, room_id=None):
             ]
         )
         
-        # Create chain with context
+        # Create chain with context (lazy load LLM)
+        llm = get_llm()
         chain = prompt | llm
         
         # Invoke the chain with conversation history
