@@ -12,9 +12,18 @@ from datetime import datetime, timedelta
 import jwt
 from flask_migrate import Migrate
 app = Flask(__name__)
-CORS(app)
-
 load_dotenv()
+
+# Configure CORS with proper settings for Socket.IO
+cors_origins = os.getenv("CORS_ORIGINS", "*").split(",") if os.getenv("CORS_ORIGINS") else ["*"]
+CORS(app, origins=cors_origins, supports_credentials=True)
+
+# Configure session for production (needed for Socket.IO polling)
+# Render uses HTTPS, so check if URL contains https or if explicitly set
+is_production = os.getenv('RENDER') == 'true' or 'onrender.com' in os.getenv('DATABASE_URL', '')
+app.config['SESSION_COOKIE_SECURE'] = is_production
+app.config['SESSION_COOKIE_SAMESITE'] = 'None' if is_production else 'Lax'
+app.config['SESSION_COOKIE_HTTPONLY'] = True
 
 # Convert postgresql:// to postgresql+psycopg:// for psycopg3
 database_url = os.getenv("DATABASE_URL", "")
@@ -28,8 +37,11 @@ migrate = Migrate(app, db)
 # For production with Python 3.12, can switch back to eventlet
 socketio = SocketIO(
     app,
-    cors_allowed_origins=os.getenv("CORS_ORIGINS", "*").split(","),
-    async_mode="threading"
+    cors_allowed_origins=cors_origins,
+    async_mode="threading",
+    cors_credentials=True,
+    allow_upgrades=True,
+    transports=['websocket', 'polling']
 )
 
 

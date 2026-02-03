@@ -83,19 +83,35 @@ def register_socket_events(socketio: SocketIO):
 
     @socketio.on('connect')
     def handle_connect(auth):
+        # #region agent log
+        import logging
+        logging.basicConfig(level=logging.INFO)
+        logger = logging.getLogger(__name__)
+        logger.info(f"Socket connect attempt - auth present: {auth is not None}, token present: {auth.get('token') if auth else None}")
+        # #endregion
+        
         if not auth or not auth.get("token"):
+            logger.warning("Socket connection rejected: No auth token")
             return False
         try:
             token = auth.get("token")
             payload = jwt.decode(token, current_app.config['SECRET_KEY'], algorithms=['HS256'])
+            logger.info(f"Socket connection authenticated for user_id: {payload.get('user_id')}")
         
         except jwt.ExpiredSignatureError:
+            logger.warning("Socket connection rejected: Token expired")
             return False
         
-        except jwt.InvalidTokenError:
+        except jwt.InvalidTokenError as e:
+            logger.warning(f"Socket connection rejected: Invalid token - {str(e)}")
+            return False
+        
+        except Exception as e:
+            logger.error(f"Socket connection error: {str(e)}")
             return False
         
         session['user_id'] = payload['user_id']
+        logger.info(f"Socket connected successfully, session user_id: {session.get('user_id')}")
         return True
 
     @socketio.on('join_room')

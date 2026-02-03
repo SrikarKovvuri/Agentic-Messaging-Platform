@@ -87,6 +87,14 @@ export default function ChatPage() {
   
         const socketInstance = io(apiUrl, {
           auth: { token },
+          transports: ['websocket', 'polling'],
+          upgrade: true,
+          rememberUpgrade: true,
+          reconnection: true,
+          reconnectionAttempts: 5,
+          reconnectionDelay: 1000,
+          withCredentials: true,
+          forceNew: false,
         });
   
         // Only proceed if we don't already have a connected socket
