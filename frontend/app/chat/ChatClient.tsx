@@ -60,18 +60,9 @@ export default function ChatPage() {
     if (status !== 'authenticated' || !session?.user || !roomCode) return;
     
     // If already connected to this room, don't reconnect
-    // Check both React state AND actual socket connection state
-    const socketConnected = socketRef.current?.connected ?? false;
-    if (socketRef.current && currentRoomRef.current === roomCode && (isConnected || socketConnected)) {
+    if (socketRef.current && currentRoomRef.current === roomCode && isConnected) {
       // #region agent log
-      console.log('[DEBUG] Already connected, skipping reconnect', {
-        hasSocket: !!socketRef.current,
-        currentRoom: currentRoomRef.current,
-        roomCode,
-        isConnected,
-        socketConnected,
-        socketId: socketRef.current?.id
-      });
+      console.log('[DEBUG] Already connected, skipping reconnect');
       // #endregion
       return;
     }
@@ -212,70 +203,16 @@ export default function ChatPage() {
     connectWithAuth();
   
     return () => {
-      // Only cleanup on unmount or when roomCode actually changes
-      // Capture current values at cleanup time
-      const currentRoom = currentRoomRef.current;
-      const currentSocket = socketRef.current;
-      const socketActuallyConnected = currentSocket?.connected ?? false;
-      
-      // #region agent log
-      console.log('[DEBUG] Cleanup function called', { 
-        currentRoom, 
-        newRoomCode: roomCode, 
-        hasSocket: !!currentSocket,
-        socketConnected: socketActuallyConnected,
-        isConnected,
-        status,
-        socketId: currentSocket?.id
-      });
-      // #endregion
-      
-      // Only disconnect if:
-      // 1. Room code is actually changing (not just useEffect re-running)
-      // 2. Component is unmounting (roomCode becomes null/undefined)
-      // 3. Status changed to unauthenticated
-      // AND socket is actually connected (don't disconnect if already disconnected)
-      const roomChanged = currentRoom && currentRoom !== roomCode;
-      const isUnmounting = !roomCode;
-      const isUnauthenticated = status === 'unauthenticated';
-      const shouldDisconnect = (roomChanged || isUnmounting || isUnauthenticated) && socketActuallyConnected;
-      
-      if (shouldDisconnect && currentSocket) {
-        // #region agent log
-        const reason = roomChanged ? 'room_changed' : isUnmounting ? 'unmounting' : 'unauthenticated';
-        console.log('[DEBUG] Cleanup: Disconnecting socket', { 
-          reason,
-          oldRoom: currentRoom,
-          newRoom: roomCode,
-          socketId: currentSocket.id
-        });
-        // #endregion
-        isConnectingRef.current = false;
-        currentSocket.removeAllListeners();
-        currentSocket.disconnect();
+      isConnectingRef.current = false;
+      if (socketRef.current) {
+        socketRef.current.removeAllListeners();
+        socketRef.current.disconnect();
         socketRef.current = null;
         currentRoomRef.current = null;
         setSocket(null);
-      } else if (currentSocket && !socketActuallyConnected) {
-        // #region agent log
-        console.log('[DEBUG] Cleanup: Socket already disconnected, just cleaning refs');
-        // #endregion
-        socketRef.current = null;
-        currentRoomRef.current = null;
-        setSocket(null);
-      } else {
-        // #region agent log
-        console.log('[DEBUG] Cleanup: Skipping disconnect', { 
-          currentRoom, 
-          roomCode, 
-          shouldDisconnect,
-          socketActuallyConnected,
-          reason: 'room unchanged and component still mounted'
-        });
-        // #endregion
       }
     };
-  }, [roomCode, status]); // Removed session?.user?.email to prevent unnecessary re-runs
+  }, [roomCode, session, status]);
 
   // Send message
   const sendMessage = () => {
