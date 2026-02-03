@@ -16,7 +16,11 @@ CORS(app)
 
 load_dotenv()
 
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv("DATABASE_URL")
+# Convert postgresql:// to postgresql+psycopg:// for psycopg3
+database_url = os.getenv("DATABASE_URL", "")
+if database_url.startswith("postgresql://"):
+    database_url = database_url.replace("postgresql://", "postgresql+psycopg://", 1)
+app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
 db.init_app(app)
 migrate = Migrate(app, db)
