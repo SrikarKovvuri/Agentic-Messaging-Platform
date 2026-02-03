@@ -93,14 +93,14 @@ def register_socket_events(socketio: SocketIO):
         except jwt.InvalidTokenError:
             return False
         
-        g.user_id = payload['user_id']
+        session['user_id'] = payload['user_id']
 
     @socketio.on('join_room')
     def handle_join_room(data): #data is just payload of event. in this case, it looks like this: { room_code: 'some_code' }
         with current_app.app_context():
             room_code = data.get('room_code')
             #get user_id from oauth, just do this for now
-            user_id = g.user_id
+            user_id = session['user_id']
             socket_id = request.sid
             
             room = Room.query.filter_by(room_code=room_code).first()
@@ -126,7 +126,7 @@ def register_socket_events(socketio: SocketIO):
             room_code = data.get('room_code')
             message = data.get('message')
             #get user_id from oauth, just do this for now
-            user_id = g.user_id
+            user_id = session['user_id']
             socket_id = request.sid
             room = Room.query.filter_by(room_code=room_code).first()
             if room and room.room_id in rooms(socket_id):
