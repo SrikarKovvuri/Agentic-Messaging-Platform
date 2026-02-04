@@ -401,8 +401,9 @@ export default function ChatPage() {
           ) : (
             <div className="space-y-4">
               {messages.map((msg, i) => {
-                const isOwnMessage = session?.user?.email?.split('@')[0] === msg.user_id?.toString() || 
-                                     session?.user?.name?.split(' ')[0].toLowerCase() === msg.user_id?.toString().toLowerCase();
+                // Compare username from message with session user's name
+                const isOwnMessage = msg.username === session?.user?.name || 
+                                     msg.username === session?.user?.email?.split('@')[0];
                 const isAgentMessage = msg.user_id === 'agent';
                 
                 return (
