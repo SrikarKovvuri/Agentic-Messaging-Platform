@@ -303,9 +303,9 @@ export default function ChatPage() {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="flex items-center gap-3">
-          <div className="w-2 h-2 bg-indigo-500 rounded-full animate-pulse"></div>
-          <div className="w-2 h-2 bg-indigo-500 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
-          <div className="w-2 h-2 bg-indigo-500 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }}></div>
+          <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+          <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
+          <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }}></div>
         </div>
       </div>
     );
@@ -318,7 +318,7 @@ export default function ChatPage() {
           <p className="text-slate-500 mb-4">Invalid room</p>
           <button
             onClick={() => router.push('/rooms')}
-            className="text-indigo-600 hover:text-indigo-700 font-medium"
+            className="text-blue-500 hover:text-blue-600 font-medium"
           >
             Go back to rooms
           </button>
@@ -427,7 +427,7 @@ export default function ChatPage() {
                       <div
                         className={`px-4 py-3 rounded-2xl ${
                           isOwnMessage
-                            ? 'bg-indigo-600 text-white rounded-br-md'
+                            ? 'bg-blue-500 text-white rounded-br-md shadow-sm'
                             : isAgentMessage
                               ? 'bg-gradient-to-br from-violet-500 to-purple-600 text-white rounded-bl-md shadow-md'
                               : 'bg-white text-slate-900 rounded-bl-md shadow-sm border border-slate-100'
@@ -518,7 +518,7 @@ export default function ChatPage() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyPress}
-                className="w-full px-4 py-3 bg-slate-100 border-0 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all resize-none"
+                className="w-full px-4 py-3 bg-slate-100 border-0 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all resize-none"
                 placeholder="Type a message..."
                 disabled={!isConnected}
               />
@@ -526,7 +526,7 @@ export default function ChatPage() {
             <button
               onClick={sendMessage}
               disabled={!input.trim() || !isConnected}
-              className="p-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-xl transition-all shadow-sm hover:shadow-md"
+              className="p-3 bg-blue-500 hover:bg-blue-600 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-xl transition-all shadow-sm hover:shadow-md"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
