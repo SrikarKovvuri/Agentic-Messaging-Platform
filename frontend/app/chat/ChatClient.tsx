@@ -140,7 +140,7 @@ export default function ChatPage() {
         setSocket(socketInstance);
         setMessages([]); // Reset messages when joining a new room
 
-        // #region agent log - Hypothesis A/B: Track ping/pong activity
+        // #region agent log - track ping/pong activity and shi
         let lastPingTime: number | null = null;
         let pingCount = 0;
         
@@ -212,7 +212,6 @@ export default function ChatPage() {
             timestamp: new Date().toISOString()
           });
           // #endregion
-          // Don't update any state - this is just informational
         });
 
         socketInstance.on('user_left', (data) => {
