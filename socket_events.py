@@ -273,10 +273,19 @@ def register_socket_events(socketio: SocketIO):
                     agent_input = message.strip()[6:].strip()  # Better parsing
                     if agent_input:  # Check if there's actual input
                         try:
+                            # Emit "thinking" state to show the agent is processing
+                            emit("agent_status", {"status": "thinking"}, room=room.room_id)
+                            
                             # Pass room_id for memory context
                             agent_response = run_agent(agent_input, room_id=room.room_id)
                             
+                            # Emit "responding" state briefly before the message
+                            emit("agent_status", {"status": "responding"}, room=room.room_id)
+                            
                             emit("new_message", {"user_id": "agent", "message": agent_response, "username": "Agent"}, room=room.room_id)
+                            
+                            # Set agent back to idle after responding
+                            emit("agent_status", {"status": "idle"}, room=room.room_id)
                             
                             agent_message = Message(
                                 user_id=user_id,
@@ -287,6 +296,8 @@ def register_socket_events(socketio: SocketIO):
                             db.session.commit()
                         except Exception as e:
                             print(f"Agent error: {e}")
+                            # Emit "failed" state on error
+                            emit("agent_status", {"status": "failed", "error": str(e)}, room=room.room_id)
                             emit("error", {"message": "Agent error occurred"}, room=room.room_id)
                     
                 new_message = Message(

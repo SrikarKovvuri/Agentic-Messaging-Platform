@@ -27,11 +27,12 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isConnected, setIsConnected] = useState(false);
+  const [agentStatus, setAgentStatus] = useState<'idle' | 'thinking' | 'responding' | 'failed'>('idle');
 
-  // Auto-scroll to bottom when new messages arrive
+  // Auto-scroll to bottom when new messages arrive or agent status changes
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, agentStatus]);
 
   // Auth guard
   useEffect(() => {
@@ -201,6 +202,17 @@ export default function ChatPage() {
           setMessages((prev) => [...prev, data]);
         });
 
+        // Listen for agent status updates
+        socketInstance.on('agent_status', (data: { status: 'idle' | 'thinking' | 'responding' | 'failed', error?: string }) => {
+          console.log('[DEBUG] Agent status update:', data);
+          setAgentStatus(data.status);
+          
+          // Auto-reset failed status after 3 seconds
+          if (data.status === 'failed') {
+            setTimeout(() => setAgentStatus('idle'), 3000);
+          }
+        });
+
         socketInstance.on('user_joined', (data) => {
           // #region agent log
           console.log('[DEBUG] User joined event received:', { 
@@ -337,11 +349,29 @@ export default function ChatPage() {
                   {roomCode}
                 </span>
               </div>
-              <div className="flex items-center gap-1.5 mt-0.5">
-                <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-slate-300'}`}></div>
-                <span className="text-xs text-slate-500">
-                  {isConnected ? 'Connected' : 'Connecting...'}
-                </span>
+              <div className="flex items-center gap-3 mt-0.5">
+                <div className="flex items-center gap-1.5">
+                  <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-slate-300'}`}></div>
+                  <span className="text-xs text-slate-500">
+                    {isConnected ? 'Connected' : 'Connecting...'}
+                  </span>
+                </div>
+                {agentStatus !== 'idle' && (
+                  <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${
+                    agentStatus === 'thinking' ? 'bg-violet-100 text-violet-600' :
+                    agentStatus === 'responding' ? 'bg-purple-100 text-purple-600' :
+                    'bg-red-100 text-red-600'
+                  }`}>
+                    <div className={`w-1.5 h-1.5 rounded-full ${
+                      agentStatus === 'thinking' ? 'bg-violet-500 animate-pulse' :
+                      agentStatus === 'responding' ? 'bg-purple-500 animate-pulse' :
+                      'bg-red-500'
+                    }`}></div>
+                    {agentStatus === 'thinking' && 'Agent thinking'}
+                    {agentStatus === 'responding' && 'Agent responding'}
+                    {agentStatus === 'failed' && 'Agent error'}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -373,6 +403,7 @@ export default function ChatPage() {
               {messages.map((msg, i) => {
                 const isOwnMessage = session?.user?.email?.split('@')[0] === msg.user_id?.toString() || 
                                      session?.user?.name?.split(' ')[0].toLowerCase() === msg.user_id?.toString().toLowerCase();
+                const isAgentMessage = msg.user_id === 'agent';
                 
                 return (
                   <div
@@ -381,15 +412,25 @@ export default function ChatPage() {
                   >
                     <div className={`max-w-[80%] sm:max-w-[70%] ${isOwnMessage ? 'order-2' : ''}`}>
                       {!isOwnMessage && (
-                        <span className="text-xs text-slate-500 ml-3 mb-1 block">
-                          {msg.username || `User ${msg.user_id}`}
+                        <span className={`text-xs ml-3 mb-1 block ${isAgentMessage ? 'text-violet-500 font-medium' : 'text-slate-500'}`}>
+                          {isAgentMessage && (
+                            <span className="inline-flex items-center gap-1">
+                              <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+                              </svg>
+                              {msg.username || 'Agent'}
+                            </span>
+                          )}
+                          {!isAgentMessage && (msg.username || `User ${msg.user_id}`)}
                         </span>
                       )}
                       <div
                         className={`px-4 py-3 rounded-2xl ${
                           isOwnMessage
                             ? 'bg-indigo-600 text-white rounded-br-md'
-                            : 'bg-white text-slate-900 rounded-bl-md shadow-sm border border-slate-100'
+                            : isAgentMessage
+                              ? 'bg-gradient-to-br from-violet-500 to-purple-600 text-white rounded-bl-md shadow-md'
+                              : 'bg-white text-slate-900 rounded-bl-md shadow-sm border border-slate-100'
                         }`}
                       >
                         <p className="text-sm leading-relaxed break-words">{msg.message}</p>
@@ -398,6 +439,70 @@ export default function ChatPage() {
                   </div>
                 );
               })}
+              
+              {/* Agent Thinking/Status Indicator */}
+              {(agentStatus === 'thinking' || agentStatus === 'responding') && (
+                <div className="flex justify-start animate-fade-in">
+                  <div className="max-w-[80%] sm:max-w-[70%]">
+                    <span className="text-xs text-violet-500 font-medium ml-3 mb-1 block">
+                      <span className="inline-flex items-center gap-1">
+                        <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+                        </svg>
+                        Agent
+                      </span>
+                    </span>
+                    <div className="px-4 py-3 rounded-2xl bg-gradient-to-br from-violet-500 to-purple-600 rounded-bl-md shadow-md">
+                      <div className="flex items-center gap-2">
+                        {agentStatus === 'thinking' && (
+                          <>
+                            <div className="flex gap-1">
+                              <div className="w-2 h-2 bg-white/80 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                              <div className="w-2 h-2 bg-white/80 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                              <div className="w-2 h-2 bg-white/80 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                            </div>
+                            <span className="text-sm text-white/90">Thinking...</span>
+                          </>
+                        )}
+                        {agentStatus === 'responding' && (
+                          <>
+                            <svg className="w-4 h-4 text-white/80 animate-spin" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <span className="text-sm text-white/90">Responding...</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {/* Agent Failed Indicator */}
+              {agentStatus === 'failed' && (
+                <div className="flex justify-start animate-fade-in">
+                  <div className="max-w-[80%] sm:max-w-[70%]">
+                    <span className="text-xs text-red-500 font-medium ml-3 mb-1 block">
+                      <span className="inline-flex items-center gap-1">
+                        <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+                        </svg>
+                        Agent
+                      </span>
+                    </span>
+                    <div className="px-4 py-3 rounded-2xl bg-red-100 border border-red-200 rounded-bl-md">
+                      <div className="flex items-center gap-2">
+                        <svg className="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span className="text-sm text-red-600">Something went wrong. Please try again.</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
               <div ref={messagesEndRef} />
             </div>
           )}
