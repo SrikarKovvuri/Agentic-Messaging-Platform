@@ -169,7 +169,7 @@ def register_socket_events(socketio: SocketIO):
         with current_app.app_context():
             room_code = data.get('room_code')
             # Get user_id from socket-specific storage (more reliable than session in threading mode)
-            user_id = socket_user_map.get(socket_id) or session.get('user_id')
+            user_id = socket_user_map.get(socket_id)
             if not user_id:
                 logger.error(f"join_room failed - socket_id: {socket_id}, no user_id found")
                 emit("error", {"message": "Authentication required"})
@@ -254,7 +254,8 @@ def register_socket_events(socketio: SocketIO):
             room_code = data.get('room_code')
             message = data.get('message')
             # Get user_id from socket-specific storage (more reliable than session in threading mode)
-            user_id = socket_user_map.get(socket_id) or session.get('user_id')
+            user_id = socket_user_map.get(socket_id)
+
             if not user_id:
                 emit("error", {"message": "Authentication required"})
                 return
@@ -309,7 +310,8 @@ def register_socket_events(socketio: SocketIO):
         logging.basicConfig(level=logging.INFO)
         logger = logging.getLogger(__name__)
         socket_id = request.sid
-        user_id = socket_user_map.get(socket_id) or session.get('user_id')
+        user_id = socket_user_map.get(socket_id)
+
         current_rooms_list = list(rooms(socket_id))
         log_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.cursor', 'debug.log')
         log_data = {
@@ -359,7 +361,8 @@ def register_socket_events(socketio: SocketIO):
 
             room = Room.query.filter_by(room_code=room_code).first()
             if room:
-                user_id = socket_user_map.get(socket_id) or session.get('user_id')
+                user_id = socket_user_map.get(socket_id)
+
                 # #region agent log
                 rooms_before = list(rooms(socket_id))
                 log_data = {

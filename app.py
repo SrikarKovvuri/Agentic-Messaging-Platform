@@ -11,6 +11,8 @@ from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
 import jwt
 from flask_migrate import Migrate
+import eventlet
+eventlet.monkey_patch()
 app = Flask(__name__)
 load_dotenv()
 
@@ -44,7 +46,7 @@ logger.info(f"Initializing SocketIO with ping_interval=25, ping_timeout=10 (Rend
 socketio = SocketIO(
     app,
     cors_allowed_origins=cors_origins,
-    async_mode="threading",
+    async_mode="eventlet",
     cors_credentials=True,
     allow_upgrades=True,
     transports=['websocket', 'polling'],
