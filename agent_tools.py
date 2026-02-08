@@ -6,7 +6,15 @@ load_dotenv()
 
 @tool
 def web_search_tool(query):
+    """ This tool searches the web for the most relevant infomration based on the user's query.
     
+    Args:
+        query: The search query string
+        
+    Returns:
+        A formatted string containing top search results with titles, content, and URLs
+        
+    """
     tavily = TavilyClient(api_key = os.getenv("TAVILY_API_KEY"))
 
     response = tavily.search(query)
