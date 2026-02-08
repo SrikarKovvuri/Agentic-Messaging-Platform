@@ -9,6 +9,7 @@ import os
 import json
 from agent_tools import web_search_tool
 # Lazy initialization - only create LLM when needed
+from langchain.agents import create_openai_functions_agent, AgentExecutor
 _llm = None
 _mem_llm = None
 memory_info = {}
@@ -169,16 +170,15 @@ def run_agent(user_input, room_id=None):
         
         # Create chain with context (lazy load LLM)
         llm = get_llm()
-        chain = prompt | llm
+        tools = [web_search_tool]
+        agent = create_openai_functions_agent(llm, tools, prompt)
+        agent_executor = AgentExecutor(agent=agent, tools=tools, verbose = False)
         
-        # Invoke the chain with conversation history
-        response = chain.invoke({
+        response = agent_executor.invoke({
             "input": user_input,
             "conversation_history": conversation_history
         })
-        
-        # Extract the content from the response
-        return response.content
+        return response["output"]
     except Exception as e:
         return f"Error: {str(e)}"
 
