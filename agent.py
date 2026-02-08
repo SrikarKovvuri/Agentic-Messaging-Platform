@@ -7,7 +7,7 @@ from models import Message, User, Room
 from flask import current_app
 import os
 import json
-
+from agent_tools import web_search_tool
 # Lazy initialization - only create LLM when needed
 _llm = None
 _mem_llm = None
