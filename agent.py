@@ -8,8 +8,7 @@ from flask import current_app
 import os
 import json
 from agent_tools import web_search_tool
-# Lazy initialization - only create LLM when needed
-from langchain.agents import createOpenAIFunctionsAgent, AgentExecutor
+from langgraph.prebuilt import create_react_agent
 _llm = None
 _mem_llm = None
 memory_info = {}
@@ -160,25 +159,24 @@ def run_agent(user_input, room_id=None):
                 conversation_history = "\n".join(history[-10:])  # Last 10 messages
                 conversation_history = f"\n\nRecent conversation:\n{conversation_history}\n\n"
         
-        # Create prompt with context
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                ("system", "You are a helpful assistant in a chat room. Be concise and helpful. Use the conversation history to provide context-aware responses. Respond in a casual, funny tone"),
-                ("user", "{conversation_history}User asks: {input}"),
-            ]
-        )
-        
-        # Create chain with context (lazy load LLM)
+        # Create agent with tools (lazy load LLM)
         llm = get_llm()
         tools = [web_search_tool]
-        agent = createOpenaiFunctionsAgent(llm, tools, prompt)
-        agent_executor = AgentExecutor(agent=agent, tools=tools, verbose = False)
+        agent_executor = create_react_agent(llm, tools)
         
+        # Build the user message with conversation history
+        user_message = conversation_history + f"User asks: {user_input}" if conversation_history else f"User asks: {user_input}"
+        
+        # Invoke the agent with messages format
         response = agent_executor.invoke({
-            "input": user_input,
-            "conversation_history": conversation_history
+            "messages": [
+                ("system", "You are a helpful assistant in a chat room. Be concise and helpful. Use the conversation history to provide context-aware responses. Respond in a casual, funny tone. You have access to web search tools - use them when users ask about current events, facts, or information that might need verification."),
+                ("user", user_message)
+            ]
         })
-        return response["output"]
+        
+        # Extract the final response from the messages
+        return response["messages"][-1].content
     except Exception as e:
         return f"Error: {str(e)}"
 
