@@ -9,7 +9,7 @@ import os
 import json
 from agent_tools import web_search_tool
 # Lazy initialization - only create LLM when needed
-from langchain.agents import create_openai_functions_agent, AgentExecutor
+from langchain.agents import createOpenAIFunctionsAgent, AgentExecutor
 _llm = None
 _mem_llm = None
 memory_info = {}
@@ -171,7 +171,7 @@ def run_agent(user_input, room_id=None):
         # Create chain with context (lazy load LLM)
         llm = get_llm()
         tools = [web_search_tool]
-        agent = create_openai_functions_agent(llm, tools, prompt)
+        agent = createOpenaiFunctionsAgent(llm, tools, prompt)
         agent_executor = AgentExecutor(agent=agent, tools=tools, verbose = False)
         
         response = agent_executor.invoke({
