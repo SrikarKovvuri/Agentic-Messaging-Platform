@@ -173,6 +173,7 @@ def get_previous_messages():
     messages_data = [{
         "message_id": msg.message_id,
         "user_id": msg.user_id,
+        "username": msg.user.username,
         "content": msg.content,
         "object_key": msg.image_url,
         "timestamp": msg.timestamp.isoformat() if msg.timestamp else None

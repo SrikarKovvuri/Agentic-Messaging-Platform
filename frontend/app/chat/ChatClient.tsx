@@ -163,8 +163,9 @@ export default function ChatPage() {
           const prevRes = await fetch(`${apiUrl}/get_previous_messages?room_code=${roomCode}`);
           if (prevRes.ok) {
             const { messages: prevMessages } = await prevRes.json();
-            const formatted: Message[] = prevMessages.map((m: { user_id: number | string; content: string; object_key?: string }) => ({
+            const formatted: Message[] = prevMessages.map((m: { user_id: number | string; content: string; object_key?: string; username?: string }) => ({
               user_id: m.user_id,
+              username: m.username,
               message: m.content,
               object_key: m.object_key || undefined,
             }));
