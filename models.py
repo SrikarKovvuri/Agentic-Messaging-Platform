@@ -108,6 +108,7 @@ class Message(db.Model):
     message_id = db.Column(db.Integer, primary_key=True)
 
     content = db.Column(db.Text, nullable=False)
+    image_url = db.Column(db.String(2048), nullable=True)
     timestamp = db.Column(
         db.DateTime,
         default=datetime.utcnow,

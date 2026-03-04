@@ -11,14 +11,22 @@ from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
 import jwt
 from flask_migrate import Migrate
+
 import eventlet
+
 eventlet.monkey_patch()
+import boto3
+import uuid
+from botocore.exceptions import ClientError
 app = Flask(__name__)
 load_dotenv()
 
 # Configure CORS with proper settings for Socket.IO
 cors_origins = os.getenv("CORS_ORIGINS", "*").split(",") if os.getenv("CORS_ORIGINS") else ["*"]
 CORS(app, origins=cors_origins, supports_credentials=True)
+
+
+
 
 # Configure session for production (needed for Socket.IO polling)
 # Render uses HTTPS, so check if URL contains https or if explicitly set
@@ -78,6 +86,14 @@ def generate_jwt_token(user_id):
     }
     token = jwt.encode(payload, app.config['SECRET_KEY'], algorithm='HS256')
     return token
+
+def get_s3_client():
+    return boto3.client(
+        "s3",
+        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+        region_name=os.getenv("AWS_REGION")
+    )
 
 @app.route('/create_room', methods = ['POST'])
 def create_room():
@@ -158,12 +174,54 @@ def get_previous_messages():
         "message_id": msg.message_id,
         "user_id": msg.user_id,
         "content": msg.content,
+        "object_key": msg.image_url,
         "timestamp": msg.timestamp.isoformat() if msg.timestamp else None
     } for msg in messages]
     
     return jsonify({"messages": messages_data}), 200
 
+@app.route('/get_upload_url', methods = ['GET', 'POST'])
+def get_upload_url():
+    data = request.get_json()
+    s3 = get_s3_client()
+    object_key = f"uploads/{uuid.uuid4()}"
+    content_type = data.get('content_type')
+    try:
+        response = s3.generate_presigned_url(
+            "put_object", #gives anyone with url write access to the object
+            Params={
+                "Bucket": "agent-messaging",
+                "Key": object_key,
+                "ContentType": content_type,
+
+            },
+            ExpiresIn=3600 #1 hour
+        )
+        return jsonify({"url": response, "object_key": object_key}), 200
+    except ClientError as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/get_image_url', methods=['POST'])
+def get_image_url():
+    data = request.get_json()
+    object_key = data.get('object_key')
+    if not object_key:
+        return jsonify({"error": "object_key required"}), 400
+    s3 = get_s3_client()
+    try:
+        url = s3.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': 'agent-messaging', 'Key': object_key},
+            ExpiresIn=3600
+        )
+        return jsonify({"url": url}), 200
+    except ClientError as e:
+        return jsonify({"error": str(e)}), 500
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     socketio.run(app, host='0.0.0.0', port=port, debug=False)
+
+
 

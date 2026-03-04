@@ -8,6 +8,8 @@ import { io, Socket } from 'socket.io-client';
 interface Message {
   user_id: number | string;
   message: string;
+  image_url?: string;
+  object_key?: string;
   isOwn?: boolean;
   username?: string;
 }
@@ -23,16 +25,31 @@ export default function ChatPage() {
 
   const roomCode = searchParams.get('room');
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [socket, setSocket] = useState<Socket | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isConnected, setIsConnected] = useState(false);
   const [agentStatus, setAgentStatus] = useState<'idle' | 'thinking' | 'responding' | 'failed'>('idle');
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
 
   // Auto-scroll to bottom when new messages arrive or agent status changes
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, agentStatus]);
+
+  // Resolve presigned URLs for previous messages that have object_key
+  useEffect(() => {
+    messages.forEach((msg) => {
+      if (msg.object_key && !imageUrls[msg.object_key] && !msg.image_url) {
+        resolveImageUrl(msg.object_key);
+      }
+    });
+  }, [messages]);
 
   // Auth guard
   useEffect(() => {
@@ -139,7 +156,23 @@ export default function ChatPage() {
         socketRef.current = socketInstance;
         currentRoomRef.current = roomCode;
         setSocket(socketInstance);
-        setMessages([]); // Reset messages when joining a new room
+        setMessages([]);
+
+        // Load previous messages from the backend
+        try {
+          const prevRes = await fetch(`${apiUrl}/get_previous_messages?room_code=${roomCode}`);
+          if (prevRes.ok) {
+            const { messages: prevMessages } = await prevRes.json();
+            const formatted: Message[] = prevMessages.map((m: { user_id: number | string; content: string; object_key?: string }) => ({
+              user_id: m.user_id,
+              message: m.content,
+              object_key: m.object_key || undefined,
+            }));
+            setMessages(formatted);
+          }
+        } catch (err) {
+          console.error('Failed to load previous messages:', err);
+        }
 
         // #region agent log - track ping/pong activity and shi
         let lastPingTime: number | null = null;
@@ -263,16 +296,89 @@ export default function ChatPage() {
     };
   }, [roomCode, session, status]);
 
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Image must be less than 5MB');
+      return;
+    }
+    setSelectedImage(file);
+    setImagePreview(URL.createObjectURL(file));
+  };
+
+  const clearSelectedImage = () => {
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+    setSelectedImage(null);
+    setImagePreview(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleImageUpload = async (file: File): Promise<string> => {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+    const res = await fetch(`${apiUrl}/get_upload_url`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content_type: file.type }),
+    });
+    if (!res.ok) throw new Error('Failed to get upload URL');
+    const { url, object_key } = await res.json();
+
+    const uploadRes = await fetch(url, {
+      method: 'PUT',
+      body: file,
+      headers: { 'Content-Type': file.type },
+    });
+    if (!uploadRes.ok) throw new Error('Failed to upload image to S3');
+
+    return object_key;
+  };
+
+  const resolveImageUrl = async (objectKey: string): Promise<string> => {
+    if (imageUrls[objectKey]) return imageUrls[objectKey];
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+    const res = await fetch(`${apiUrl}/get_image_url`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ object_key: objectKey }),
+    });
+    if (!res.ok) throw new Error('Failed to get image URL');
+    const { url } = await res.json();
+    setImageUrls((prev) => ({ ...prev, [objectKey]: url }));
+    return url;
+  };
+
   // Send message
-  const sendMessage = () => {
-    if (!socket || !input.trim()) return;
+  const sendMessage = async () => {
+    if (!socket || (!input.trim() && !selectedImage)) return;
+
+    let objectKey: string | undefined;
+
+    if (selectedImage) {
+      setIsUploading(true);
+      try {
+        objectKey = await handleImageUpload(selectedImage);
+      } catch (error) {
+        console.error('Image upload failed:', error);
+        alert('Failed to upload image. Please try again.');
+        setIsUploading(false);
+        return;
+      }
+    }
 
     socket.emit('send_message', {
       room_code: roomCode,
       message: input,
+      object_key: objectKey,
     });
 
     setInput('');
+    clearSelectedImage();
+    setIsUploading(false);
   };
 
   // Handle Enter key
@@ -426,7 +532,7 @@ export default function ChatPage() {
                         </span>
                       )}
                       <div
-                        className={`px-4 py-3 rounded-2xl ${
+                        className={`rounded-2xl overflow-hidden ${
                           isOwnMessage
                             ? 'bg-blue-500 text-white rounded-br-md shadow-sm'
                             : isAgentMessage
@@ -434,7 +540,26 @@ export default function ChatPage() {
                               : 'bg-white text-slate-900 rounded-bl-md shadow-sm border border-slate-100'
                         }`}
                       >
-                        <p className="text-sm leading-relaxed break-words">{msg.message}</p>
+                        {(() => {
+                          const imgSrc = msg.image_url || (msg.object_key ? imageUrls[msg.object_key] : undefined);
+                          if (imgSrc) {
+                            return (
+                              <img
+                                src={imgSrc}
+                                alt="Shared image"
+                                className="max-w-full max-h-[400px] object-contain"
+                                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                              />
+                            );
+                          }
+                          return null;
+                        })()}
+                        {msg.message && msg.message !== '[Image]' && (
+                          <p className="text-sm leading-relaxed break-words px-4 py-3">{msg.message}</p>
+                        )}
+                        {!msg.message && !(msg.image_url || msg.object_key) && (
+                          <p className="text-sm leading-relaxed break-words px-4 py-3">{msg.message}</p>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -513,25 +638,64 @@ export default function ChatPage() {
       {/* Input Area */}
       <div className="bg-white border-t border-slate-200 px-4 sm:px-6 py-4 flex-shrink-0">
         <div className="max-w-4xl mx-auto">
+          {imagePreview && (
+            <div className="relative inline-block mb-3">
+              <img
+                src={imagePreview}
+                alt="Selected preview"
+                className="max-h-[100px] rounded-lg border border-slate-200"
+              />
+              <button
+                onClick={clearSelectedImage}
+                className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs shadow-sm transition-colors"
+              >
+                &times;
+              </button>
+            </div>
+          )}
+          <input
+            type="file"
+            accept="image/*"
+            ref={fileInputRef}
+            onChange={handleImageSelect}
+            className="hidden"
+          />
           <div className="flex items-end gap-3">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={!isConnected || isUploading}
+              className="p-3 text-slate-500 hover:text-slate-700 hover:bg-slate-100 disabled:text-slate-300 disabled:cursor-not-allowed rounded-xl transition-colors"
+              title="Attach image"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+              </svg>
+            </button>
             <div className="flex-1 relative">
               <input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyPress}
                 className="w-full px-4 py-3 bg-slate-100 border-0 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all resize-none"
-                placeholder="Type a message..."
-                disabled={!isConnected}
+                placeholder={isUploading ? 'Uploading image...' : 'Type a message...'}
+                disabled={!isConnected || isUploading}
               />
             </div>
             <button
               onClick={sendMessage}
-              disabled={!input.trim() || !isConnected}
+              disabled={(!input.trim() && !selectedImage) || !isConnected || isUploading}
               className="p-3 bg-blue-500 hover:bg-blue-600 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-xl transition-all shadow-sm hover:shadow-md"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-              </svg>
+              {isUploading ? (
+                <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+              ) : (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                </svg>
+              )}
             </button>
           </div>
           <p className="text-xs text-slate-400 mt-2 text-center">

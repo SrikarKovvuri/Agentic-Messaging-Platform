@@ -252,8 +252,8 @@ def register_socket_events(socketio: SocketIO):
         with current_app.app_context():
             socket_id = request.sid
             room_code = data.get('room_code')
-            message = data.get('message')
-            # Get user_id from socket-specific storage (more reliable than session in threading mode)
+            message = data.get('message', '')
+            object_key = data.get('object_key')
             user_id = socket_user_map.get(socket_id)
 
             if not user_id:
@@ -267,24 +267,35 @@ def register_socket_events(socketio: SocketIO):
                     return
                 
                 username = user.username
-                emit("new_message", {"user_id": user_id, "message": message, "username": username}, room=room.room_id)
+
+                image_url = None
+                if object_key:
+                    try:
+                        from app import get_s3_client
+                        s3 = get_s3_client()
+                        image_url = s3.generate_presigned_url(
+                            'get_object',
+                            Params={'Bucket': 'agent-messaging', 'Key': object_key},
+                            ExpiresIn=3600
+                        )
+                    except Exception as e:
+                        print(f"Error generating image URL: {e}")
+
+                emit("new_message", {
+                    "user_id": user_id,
+                    "message": message,
+                    "username": username,
+                    "image_url": image_url
+                }, room=room.room_id)
                 
-                if message.strip().startswith('@agent'):
-                    agent_input = message.strip()[6:].strip()  # Better parsing
-                    if agent_input:  # Check if there's actual input
+                if message and message.strip().startswith('@agent'):
+                    agent_input = message.strip()[6:].strip()
+                    if agent_input:
                         try:
-                            # Emit "thinking" state to show the agent is processing
                             emit("agent_status", {"status": "thinking"}, room=room.room_id)
-                            
-                            # Pass room_id for memory context
                             agent_response = run_agent(agent_input, room_id=room.room_id)
-                            
-                            # Emit "responding" state briefly before the message
                             emit("agent_status", {"status": "responding"}, room=room.room_id)
-                            
                             emit("new_message", {"user_id": "agent", "message": agent_response, "username": "Agent"}, room=room.room_id)
-                            
-                            # Set agent back to idle after responding
                             emit("agent_status", {"status": "idle"}, room=room.room_id)
                             
                             agent_message = Message(
@@ -296,15 +307,15 @@ def register_socket_events(socketio: SocketIO):
                             db.session.commit()
                         except Exception as e:
                             print(f"Agent error: {e}")
-                            # Emit "failed" state on error
                             emit("agent_status", {"status": "failed", "error": str(e)}, room=room.room_id)
                             emit("error", {"message": "Agent error occurred"}, room=room.room_id)
                     
                 new_message = Message(
                     user_id=user_id,
                     room_id=room.room_id,
-                    content=message,
-                    )
+                    content=message if message else "[Image]",
+                    image_url=object_key,
+                )
             
                 db.session.add(new_message)
                 db.session.commit()
