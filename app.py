@@ -95,6 +95,14 @@ def get_s3_client():
         region_name=os.getenv("AWS_REGION")
     )
 
+def convert_object_key_to_url(object_key):
+    s3 = get_s3_client()
+    return s3.generate_presigned_url(
+        'get_object',
+        Params={'Bucket': 'agent-messaging', 'Key': object_key},
+        ExpiresIn=3600
+    )
+
 @app.route('/create_room', methods = ['POST'])
 def create_room():
     room_code = generate_room_code()

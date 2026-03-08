@@ -1,6 +1,6 @@
 from dotenv import load_dotenv
 load_dotenv()
-
+from app import convert_object_key_to_url
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from models import Message, User, Room
@@ -12,6 +12,7 @@ from langgraph.prebuilt import create_react_agent
 _llm = None
 _mem_llm = None
 memory_info = {}
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 
 def get_mem_llm():
     """Get or create the memory extraction LLM instance."""
@@ -140,43 +141,77 @@ def get_room_conversation_history(room_id, limit=20):
         # Get username
         user = User.query.get(msg.user_id)
         username = user.username if user else f"User {msg.user_id}"
-        
-        # Skip agent messages to avoid confusion
-        if not msg.content.startswith("[Agent]"):
-            history.append(f"{username}: {msg.content}")
-    
+        if msg.content.startswith("[Agent]"):
+            continue
+
+        multimodal_format = {}
+        if msg.image_url:
+            image_url = convert_object_key_to_url(msg.image_url)
+            multimodal_format["type"] = "image"
+            multimodal_format["image_url"] = {"url": image_url}
+        else:
+            multimodal_format["type"] = "text"
+            multimodal_format["content"] = "User: " + username + ": " + msg.content
+      
+        history.append(multimodal_format)
+
     return history
 
-
 def run_agent(user_input, room_id=None):
-    """Run the agent with user input and room context. Returns the response."""
     try:
-        # Get conversation history if room_id is provided
-        conversation_history = ""
-        if room_id:
-            history = get_room_conversation_history(room_id, limit=15)
-            if history:
-                conversation_history = "\n".join(history[-10:])  # Last 10 messages
-                conversation_history = f"\n\nRecent conversation:\n{conversation_history}\n\n"
-        
-        # Create agent with tools (lazy load LLM)
         llm = get_llm()
         tools = [web_search_tool]
         agent_executor = create_react_agent(llm, tools)
-        
-        # Build the user message with conversation history
-        user_message = conversation_history + f"User asks: {user_input}" if conversation_history else f"User asks: {user_input}"
-        
-        # Invoke the agent with messages format
+
+        messages = []
+
+        # 1️ System message
+        messages.append(
+            SystemMessage(
+                content=(
+                    "You are a helpful assistant in a chat room. "
+                    "Be concise and helpful. Use conversation history for context. "
+                    "Respond in a casual, funny tone. "
+                    "You have access to web search tools - use them when needed."
+                )
+            )
+        )
+
+        # 2 Add conversation history properly (structured)
+        if room_id:
+            history = get_room_conversation_history(room_id, limit=10)
+
+            for msg in history:
+                if msg["type"] == "text":
+                    messages.append(
+                        HumanMessage(
+                            content=msg["content"]
+                        )
+                    )
+
+                elif msg["type"] == "image":
+                    messages.append(
+                        HumanMessage(
+                            content=[
+                                {
+                                    "type": "image_url",
+                                    "image_url": msg["image_url"]
+                                }
+                            ]
+                        )
+                    )
+
+        # 3 Add current user input (text only for now)
+        messages.append(
+            HumanMessage(content=user_input)
+        )
+
+        # 4️ Invoke agent
         response = agent_executor.invoke({
-            "messages": [
-                ("system", "You are a helpful assistant in a chat room. Be concise and helpful. Use the conversation history to provide context-aware responses. Respond in a casual, funny tone. You have access to web search tools - use them when users ask about current events, facts, or information that might need verification."),
-                ("user", user_message)
-            ]
+            "messages": messages
         })
-        
-        # Extract the final response from the messages
+
         return response["messages"][-1].content
+
     except Exception as e:
         return f"Error: {str(e)}"
-
