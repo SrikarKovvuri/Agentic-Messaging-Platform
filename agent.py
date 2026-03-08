@@ -1,6 +1,5 @@
 from dotenv import load_dotenv
 load_dotenv()
-from app import convert_object_key_to_url
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from models import Message, User, Room
@@ -13,6 +12,7 @@ _llm = None
 _mem_llm = None
 memory_info = {}
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+from s3_utils import convert_object_key_to_url
 
 def get_mem_llm():
     """Get or create the memory extraction LLM instance."""

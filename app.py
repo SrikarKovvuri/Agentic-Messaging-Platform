@@ -11,7 +11,7 @@ from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
 import jwt
 from flask_migrate import Migrate
-
+from s3_utils import get_s3_client, convert_object_key_to_url
 import eventlet
 
 eventlet.monkey_patch()
@@ -87,21 +87,7 @@ def generate_jwt_token(user_id):
     token = jwt.encode(payload, app.config['SECRET_KEY'], algorithm='HS256')
     return token
 
-def get_s3_client():
-    return boto3.client(
-        "s3",
-        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-        region_name=os.getenv("AWS_REGION")
-    )
 
-def convert_object_key_to_url(object_key):
-    s3 = get_s3_client()
-    return s3.generate_presigned_url(
-        'get_object',
-        Params={'Bucket': 'agent-messaging', 'Key': object_key},
-        ExpiresIn=3600
-    )
 
 @app.route('/create_room', methods = ['POST'])
 def create_room():

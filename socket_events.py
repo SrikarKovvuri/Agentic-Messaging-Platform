@@ -271,7 +271,7 @@ def register_socket_events(socketio: SocketIO):
                 image_url = None
                 if object_key:
                     try:
-                        from app import get_s3_client
+                        from s3_utils import get_s3_client
                         s3 = get_s3_client()
                         image_url = s3.generate_presigned_url(
                             'get_object',
